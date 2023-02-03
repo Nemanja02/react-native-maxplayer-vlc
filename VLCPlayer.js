@@ -83,6 +83,7 @@ export default class VLCPlayer extends Component {
   }
 
   _onProgress(event) {
+    console.log("onProgress", event.nativeEvent);
     if (this.props.onProgress) {
       this.props.onProgress(event.nativeEvent);
     }
