@@ -224,36 +224,11 @@ class ReactVlcPlayerView extends TextureView implements
                     break;
                 case MediaPlayer.Event.Playing:
                     map.putString("type", "Playing");
-                    try {
-                        MediaPlayer.TrackDescription[] titles = mMediaPlayer.getSpuTracks();
-                        WritableMap tracks = Arguments.createMap();
-                        for (int i = 0; i < titles.length; i++) {
-                            tracks.putString(titles[i].id + "", titles[i].name);
-                        }
-                        map.putMap("subtitles", tracks);
-                    } catch (Exception e) {
-                        WritableMap tracks = Arguments.createMap();
-                        map.putMap("subtitles", tracks);
-                        e.printStackTrace();
-                    }
-
-                    try {
-                        MediaPlayer.TrackDescription[] titles = mMediaPlayer.getAudioTracks();
-                        WritableMap tracks = Arguments.createMap();
-                        for (int i = 0; i < titles.length; i++) {
-                            tracks.putString(titles[i].id + "", titles[i].name);
-                        }
-                        map.putMap("audio_tracks", tracks);
-                    } catch (Exception e) {
-                        WritableMap tracks = Arguments.createMap();
-                        map.putMap("audio_tracks", tracks);
-                        e.printStackTrace();
-                    }
                     eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_ON_IS_PLAYING);
                     break;
                 case MediaPlayer.Event.Opening:
                     map.putString("type", "Opening");
-                    eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_ON_OPEN);
+                    // eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_ON_OPEN);
                     break;
                 case MediaPlayer.Event.Paused:
                     map.putString("type", "Paused");
@@ -645,11 +620,41 @@ class ReactVlcPlayerView extends TextureView implements
     private final Media.EventListener mMediaListener = new Media.EventListener() {
         @Override
         public void onEvent(Media.Event event) {
+            WritableMap map = Arguments.createMap();
             switch (event.type) {
                 case Media.Event.MetaChanged:
+                    
                     Log.i(tag, "Media.Event.MetaChanged:  =" + event.getMetaId());
                     break;
                 case Media.Event.ParsedChanged:
+                    try {
+                        MediaPlayer.TrackDescription[] titles = mMediaPlayer.getSpuTracks();
+                        WritableMap tracks = Arguments.createMap();
+                        for (int i = 0; i < titles.length; i++) {
+                            tracks.putString(titles[i].id + "", titles[i].name);
+                            System.out.println("subtitles: " + titles[i].id + " " + titles[i].name);
+                        }
+                        map.putMap("subtitles", tracks);
+                    } catch (Exception e) {
+                        WritableMap tracks = Arguments.createMap();
+                        map.putMap("subtitles", tracks);
+                        e.printStackTrace();
+                    }
+                    try {
+                        MediaPlayer.TrackDescription[] titles = mMediaPlayer.getAudioTracks();
+                        WritableMap tracks = Arguments.createMap();
+                        for (int i = 0; i < titles.length; i++) {
+                            tracks.putString(titles[i].id + "", titles[i].name);
+                            System.out.println("audio_tracks: " + titles[i].id + " " + titles[i].name);
+                        }
+                        map.putMap("audio_tracks", tracks);
+                    } catch (Exception e) {
+                        WritableMap tracks = Arguments.createMap();
+                        map.putMap("audio_tracks", tracks);
+                        e.printStackTrace();
+                    }
+                    Log.e(tag, "Media.Event.ParsedChanged  =" + event.getMetaId());
+                    eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_ON_OPEN);
                     Log.i(tag, "Media.Event.ParsedChanged  =" + event.getMetaId());
                     break;
                 case Media.Event.StateChanged:
