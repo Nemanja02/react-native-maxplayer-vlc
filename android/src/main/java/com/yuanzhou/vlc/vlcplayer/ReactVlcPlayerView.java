@@ -207,7 +207,6 @@ class ReactVlcPlayerView extends TextureView implements
         public void onEvent(MediaPlayer.Event event) {
             // System.out.println("onEvent: " + event.type);
             Log.i("onEvent", "onEvent: " + event.type);
-            Toast.makeText(themedReactContext, "onEvent: " + event.type, Toast.LENGTH_SHORT).show();
             boolean isPlaying = mMediaPlayer.isPlaying();
             currentTime = mMediaPlayer.getTime();
             float position = mMediaPlayer.getPosition();
