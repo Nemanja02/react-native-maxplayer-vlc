@@ -35,6 +35,7 @@ public class ReactVlcPlayerViewManager extends SimpleViewManager<ReactVlcPlayerV
     private static final String PROP_CLEAR = "clear";
     private static final String PROP_PROGRESS_UPDATE_INTERVAL = "progressUpdateInterval";
     private static final String PROP_SUBTITLE_TRACK = "subtitleTrack";
+    private static final String PROP_AUDIO_TRACK = "audioTrack";
 
 
     @Override
@@ -117,6 +118,12 @@ public class ReactVlcPlayerViewManager extends SimpleViewManager<ReactVlcPlayerV
     @ReactProp(name = PROP_SUBTITLE_TRACK)
     public void setSubtitleTrack(final ReactVlcPlayerView videoView, final int track) {
         videoView.setSubtitleTrack(track);
+        //videoView.seekTo(seek);
+    }
+
+    @ReactProp(name = PROP_AUDIO_TRACK)
+    public void setAudioTrack(final ReactVlcPlayerView videoView, final int track) {
+        videoView.setAudioTrack(track);
         //videoView.seekTo(seek);
     }
 
