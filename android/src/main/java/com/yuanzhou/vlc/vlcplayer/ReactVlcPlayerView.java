@@ -641,6 +641,14 @@ class ReactVlcPlayerView extends TextureView implements
                         map.putMap("audio_tracks", tracks);
                         e.printStackTrace();
                     }
+
+                    try {
+                        long duration = mMediaPlayer.getLength();
+                        map.putDouble("duration", duration);
+                    } catch (Exception e) {
+                        map.putDouble("duration", -1);
+                    }
+                   
                     Log.e(tag, "Media.Event.ParsedChanged  =" + event.getMetaId());
                     eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_ON_OPEN);
                     break;
