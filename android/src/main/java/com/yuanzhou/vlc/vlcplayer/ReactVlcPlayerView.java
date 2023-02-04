@@ -348,7 +348,8 @@ class ReactVlcPlayerView extends TextureView implements
             mMediaPlayer.setEventListener(mPlayerListener);
 
             if (userAgent != null) {
-                mMediaPlayer.setUserAgent(userAgent, userAgent);
+                // mMediaPlayer.setUserAgent(userAgent, userAgent);
+                libvlc.setUserAgent(userAgent, userAgent);
             }
 
             //this.getHolder().setKeepScreenOn(true);
