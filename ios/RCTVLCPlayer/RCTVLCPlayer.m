@@ -124,11 +124,13 @@ static NSString *const playbackRate = @"rate";
     _source = source;
     // [bavv edit start]
     NSString* uri    = [source objectForKey:@"uri"];
+    NSString* agent    = [source objectForKey:@"userAgent"];
     BOOL    autoplay = [RCTConvert BOOL:[source objectForKey:@"autoplay"]];
     NSURL* _uri    = [NSURL URLWithString:uri];
     NSDictionary* initOptions = [source objectForKey:@"initOptions"];
 
     _player = [[VLCMediaPlayer alloc] init];
+
     // [bavv edit end]
 
     [_player setDrawable:self];
@@ -140,6 +142,7 @@ static NSString *const playbackRate = @"rate";
     NSMutableDictionary *options = [NSMutableDictionary new];
     [options setObject:@"1" forKey:@"rtsp-tcp"];
     [options setObject:@"1000" forKey:@"input-repeat"];
+    [options setObject:agent forKey:@"http-user-agent"];
     [media addOptions:[options copy]];
     options = nil;
 
@@ -167,25 +170,50 @@ static NSString *const playbackRate = @"rate";
     if(_player){
         VLCMediaPlayerState state = _player.state;
         switch (state) {
-            case VLCMediaPlayerStateOpening:
-                 NSLog(@"VLCMediaPlayerStateOpening %i",1);
-                self.onVideoOpen(@{
-                                     @"target": self.reactTag
-                                     });
+            case VLCMediaPlayerStateESAdded: {
+                NSLog(@"VLCMediaPlayerStateESAdded %i",1);
+                NSMutableDictionary *subtitles  = [NSMutableDictionary dictionary];
+                    NSArray* sub_indexes = [_player videoSubTitlesIndexes];
+                    NSArray* sub_names = [_player videoSubTitlesNames];
+                    for (NSUInteger i = 0; i < [_player numberOfSubtitlesTracks]; i++) {
+                        subtitles[sub_indexes[i]] = sub_names[i];
+                    }
+
+                    NSMutableDictionary *audio  = [NSMutableDictionary dictionary];
+                    NSArray* audio_indexes = [_player audioTrackIndexes];
+                    NSArray* audio_names = [_player audioTrackNames];
+                    for (NSUInteger i = 0; i < [_player numberOfAudioTracks]; i++) {
+                        audio[audio_indexes[i]] = audio_names[i];
+                    }
+                    self.onVideoOpen(@{
+                                         @"target": self.reactTag,
+                                         @"subtitles": subtitles,
+                                         @"audio_tracks": audio
+                                         });
                 break;
-            case VLCMediaPlayerStatePaused:
+            }
+            case VLCMediaPlayerStateOpening: {
+                NSLog(@"VLCMediaPlayerStateOpening %i",1);
+                self.onVideoOpen(@{
+                    @"target": self.reactTag
+                });
+                break;
+            }
+            case VLCMediaPlayerStatePaused: {
                 _paused = YES;
                 NSLog(@"VLCMediaPlayerStatePaused %i",1);
                 self.onVideoPaused(@{
-                                     @"target": self.reactTag
-                                     });
+                    @"target": self.reactTag
+                });
                 break;
-            case VLCMediaPlayerStateStopped:
+            }
+            case VLCMediaPlayerStateStopped: {
                 NSLog(@"VLCMediaPlayerStateStopped %i",1);
                 self.onVideoStopped(@{
-                                      @"target": self.reactTag
-                                      });
+                    @"target": self.reactTag
+                });
                 break;
+            }
             case VLCMediaPlayerStateBuffering:
                 NSLog(@"VLCMediaPlayerStateBuffering %i",1);
                 self.onVideoBuffering(@{
@@ -259,12 +287,26 @@ static NSString *const playbackRate = @"rate";
         [_player jumpForward:interval];
 }
 
--(void)setSeek:(float)pos
+- (void)setSubtitleTrack:(int)track
 {
-    if([_player isSeekable]){
-        if(pos>=0 && pos <= 1){
-            [_player setPosition:pos];
+    [_player setCurrentVideoSubTitleIndex:track];
+}
+- (void)setAudioTrack:(int)track
+{
+    [_player setCurrentAudioTrackIndex:track];
+}
+
+- (void)setSeek:(int)pos
+{
+    int currentTime = [[_player time] intValue];
+    pos = pos - (currentTime/1000);
+    if ([_player isSeekable]) {
+        if (pos > 0) {
+            [_player jumpForward:pos];
+        } else {
+            [_player jumpBackward:-pos];
         }
+        
     }
 }
 
@@ -280,6 +322,9 @@ static NSString *const playbackRate = @"rate";
 }
 
 -(void)setVideoAspectRatio:(NSString *)ratio{
+    if ([ratio isEqualToString:@"original"]) {
+        ratio = @"DEFAULT";
+    }
     char *char_content = [ratio cStringUsingEncoding:NSASCIIStringEncoding];
     [_player setVideoAspectRatio:char_content];
 }
