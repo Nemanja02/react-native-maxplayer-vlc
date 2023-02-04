@@ -34,6 +34,7 @@ public class ReactVlcPlayerViewManager extends SimpleViewManager<ReactVlcPlayerV
     private static final String PROP_AUTO_ASPECT_RATIO = "autoAspectRatio";
     private static final String PROP_CLEAR = "clear";
     private static final String PROP_PROGRESS_UPDATE_INTERVAL = "progressUpdateInterval";
+    private static final String PROP_SUBTITLE_TRACK = "subtitleTrack";
 
 
     @Override
@@ -110,6 +111,12 @@ public class ReactVlcPlayerViewManager extends SimpleViewManager<ReactVlcPlayerV
     @ReactProp(name = PROP_SEEK)
     public void setSeek(final ReactVlcPlayerView videoView, final float seek) {
         videoView.seekTo(Math.round(seek * 1000f));
+        //videoView.seekTo(seek);
+    }
+
+    @ReactProp(name = PROP_SUBTITLE_TRACK)
+    public void setSubtitleTrack(final ReactVlcPlayerView videoView, final int track) {
+        videoView.setSubtitleTrack(track);
         //videoView.seekTo(seek);
     }
 

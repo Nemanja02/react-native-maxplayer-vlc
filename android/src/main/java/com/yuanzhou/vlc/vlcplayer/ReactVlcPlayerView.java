@@ -224,6 +224,31 @@ class ReactVlcPlayerView extends TextureView implements
                     break;
                 case MediaPlayer.Event.Playing:
                     map.putString("type", "Playing");
+                    try {
+                        MediaPlayer.TrackDescription[] titles = mMediaPlayer.getSpuTracks();
+                        WritableMap tracks = Arguments.createMap();
+                        for (int i = 0; i < titles.length; i++) {
+                            tracks.putString(titles[i].id + "", titles[i].name);
+                        }
+                        map.putMap("subtitles", tracks);
+                    } catch (Exception e) {
+                        WritableMap tracks = Arguments.createMap();
+                        map.putMap("subtitles", tracks);
+                        e.printStackTrace();
+                    }
+
+                    try {
+                        MediaPlayer.TrackDescription[] titles = mMediaPlayer.getAudioTracks();
+                        WritableMap tracks = Arguments.createMap();
+                        for (int i = 0; i < titles.length; i++) {
+                            tracks.putString(titles[i].id + "", titles[i].name);
+                        }
+                        map.putMap("audio_tracks", tracks);
+                    } catch (Exception e) {
+                        WritableMap tracks = Arguments.createMap();
+                        map.putMap("audio_tracks", tracks);
+                        e.printStackTrace();
+                    }
                     eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_ON_IS_PLAYING);
                     break;
                 case MediaPlayer.Event.Opening:
@@ -440,6 +465,12 @@ class ReactVlcPlayerView extends TextureView implements
     public void seekTo(long time) {
         if (mMediaPlayer != null) {
             mMediaPlayer.setTime(time);
+        }
+    }
+
+    public void setSubtitleTrack(int trackIndex) {
+        if (mMediaPlayer != null) {
+            mMediaPlayer.setSpuTrack(trackIndex);
         }
     }
 
