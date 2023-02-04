@@ -326,6 +326,7 @@ class ReactVlcPlayerView extends TextureView implements
             int initType = srcMap.hasKey("initType") ? srcMap.getInt("initType") : 1;
             ReadableArray mediaOptions = srcMap.hasKey("mediaOptions") ? srcMap.getArray("mediaOptions") : null;
             ReadableArray initOptions = srcMap.hasKey("initOptions") ? srcMap.getArray("initOptions") : null;
+            String userAgent = srcMap.hasKey("userAgent") ? srcMap.getString("userAgent") : null;
             Integer hwDecoderEnabled = srcMap.hasKey("hwDecoderEnabled") ? srcMap.getInt("hwDecoderEnabled") : null;
             Integer hwDecoderForced = srcMap.hasKey("hwDecoderForced") ? srcMap.getInt("hwDecoderForced") : null;
 
@@ -345,6 +346,11 @@ class ReactVlcPlayerView extends TextureView implements
             // Create media player
             mMediaPlayer = new MediaPlayer(libvlc);
             mMediaPlayer.setEventListener(mPlayerListener);
+
+            if (userAgent != null) {
+                mMediaPlayer.setUserAgent(userAgent, userAgent);
+            }
+
             //this.getHolder().setKeepScreenOn(true);
             IVLCVout vlcOut = mMediaPlayer.getVLCVout();
             if (mVideoWidth > 0 && mVideoHeight > 0) {
