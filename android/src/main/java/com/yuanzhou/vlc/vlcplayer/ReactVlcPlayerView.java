@@ -205,6 +205,9 @@ class ReactVlcPlayerView extends TextureView implements
 
         @Override
         public void onEvent(MediaPlayer.Event event) {
+            // System.out.println("onEvent: " + event.type);
+            Log.i("onEvent", "onEvent: " + event.type);
+            Toast.makeText(themedReactContext, "onEvent: " + event.type, Toast.LENGTH_SHORT).show();
             boolean isPlaying = mMediaPlayer.isPlaying();
             currentTime = mMediaPlayer.getTime();
             float position = mMediaPlayer.getPosition();
@@ -296,12 +299,6 @@ class ReactVlcPlayerView extends TextureView implements
 
     };
 
-
-    /*************
-     * MediaPlayer
-     *************/
-
-
     private void stopPlayback() {
         onStopPlayback();
         releasePlayer();
@@ -348,7 +345,6 @@ class ReactVlcPlayerView extends TextureView implements
             mMediaPlayer.setEventListener(mPlayerListener);
 
             if (userAgent != null) {
-                // mMediaPlayer.setUserAgent(userAgent, userAgent);
                 libvlc.setUserAgent(userAgent, userAgent);
             }
 
@@ -607,7 +603,7 @@ class ReactVlcPlayerView extends TextureView implements
 
     @Override
     public void onSurfaceTextureUpdated(SurfaceTexture surface) {
-        Log.i("onSurfaceTextureUpdated", "onSurfaceTextureUpdated");
+        // Log.i("onSurfaceTextureUpdated", "onSurfaceTextureUpdated");
     }
 
     private final Media.EventListener mMediaListener = new Media.EventListener() {
