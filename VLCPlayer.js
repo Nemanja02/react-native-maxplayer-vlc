@@ -25,6 +25,7 @@ export default class VLCPlayer extends Component {
     this._onOpen = this._onOpen.bind(this);
     this._onLoadStart = this._onLoadStart.bind(this);
     this.changeVideoAspectRatio = this.changeVideoAspectRatio.bind(this);
+    this.subtitleTrack = this.subtitleTrack.bind(this);
   }
   static defaultProps = {
     autoplay: true,
@@ -36,6 +37,10 @@ export default class VLCPlayer extends Component {
 
   seek(pos) {
     this.setNativeProps({ seek: pos });
+  }
+
+  subtitleTrack(track) {
+    this.setNativeProps({ subtitleTrack: track });
   }
 
   resume(isResume) {
@@ -172,6 +177,7 @@ VLCPlayer.propTypes = {
   /* Native only */
   rate: PropTypes.number,
   seek: PropTypes.number,
+  subtitleTrack: PropTypes.number,
   resume: PropTypes.bool,
   snapshotPath: PropTypes.string,
   paused: PropTypes.bool,
