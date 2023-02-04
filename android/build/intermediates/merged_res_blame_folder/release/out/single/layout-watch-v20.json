@@ -1,0 +1,10 @@
+[
+    {
+        "merged": "com.yuanzhou.vlc.react-native-vlc-media-player-merged_res-22:/layout-watch-v20/abc_alert_dialog_title_material.xml",
+        "source": "com.yuanzhou.vlc.react-native-vlc-media-player-appcompat-1.4.1-17:/layout-watch-v20/abc_alert_dialog_title_material.xml"
+    },
+    {
+        "merged": "com.yuanzhou.vlc.react-native-vlc-media-player-merged_res-22:/layout-watch-v20/abc_alert_dialog_button_bar_material.xml",
+        "source": "com.yuanzhou.vlc.react-native-vlc-media-player-appcompat-1.4.1-17:/layout-watch-v20/abc_alert_dialog_button_bar_material.xml"
+    }
+]

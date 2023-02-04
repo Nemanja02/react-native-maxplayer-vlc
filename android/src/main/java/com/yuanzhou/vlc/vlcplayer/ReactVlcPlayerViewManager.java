@@ -31,7 +31,6 @@ public class ReactVlcPlayerViewManager extends SimpleViewManager<ReactVlcPlayerV
     private static final String PROP_VIDEO_ASPECT_RATIO = "videoAspectRatio";
     private static final String PROP_SRC_IS_NETWORK = "isNetwork";
     private static final String PROP_SNAPSHOT_PATH = "snapshotPath";
-    private static final String PROP_AUTO_ASPECT_RATIO = "autoAspectRatio";
     private static final String PROP_CLEAR = "clear";
     private static final String PROP_PROGRESS_UPDATE_INTERVAL = "progressUpdateInterval";
     private static final String PROP_SUBTITLE_TRACK = "subtitleTrack";
@@ -118,18 +117,11 @@ public class ReactVlcPlayerViewManager extends SimpleViewManager<ReactVlcPlayerV
     @ReactProp(name = PROP_SUBTITLE_TRACK)
     public void setSubtitleTrack(final ReactVlcPlayerView videoView, final int track) {
         videoView.setSubtitleTrack(track);
-        //videoView.seekTo(seek);
     }
 
     @ReactProp(name = PROP_AUDIO_TRACK)
     public void setAudioTrack(final ReactVlcPlayerView videoView, final int track) {
         videoView.setAudioTrack(track);
-        //videoView.seekTo(seek);
-    }
-
-    @ReactProp(name = PROP_AUTO_ASPECT_RATIO, defaultBoolean = false)
-    public void setAutoAspectRatio(final ReactVlcPlayerView videoView, final boolean autoPlay) {
-        videoView.setAutoAspectRatio(autoPlay);
     }
 
     @ReactProp(name = PROP_RESUME, defaultBoolean = true)
