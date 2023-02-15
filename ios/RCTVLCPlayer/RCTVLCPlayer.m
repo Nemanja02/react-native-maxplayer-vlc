@@ -118,9 +118,6 @@ static NSString *const playbackRate = @"rate";
 
 -(void)setSource:(NSDictionary *)source
 {
-    if(_player){
-        [self _release];
-    }
     _source = source;
     // [bavv edit start]
     NSString* uri    = [source objectForKey:@"uri"];
@@ -128,6 +125,11 @@ static NSString *const playbackRate = @"rate";
     BOOL    autoplay = [RCTConvert BOOL:[source objectForKey:@"autoplay"]];
     NSURL* _uri    = [NSURL URLWithString:uri];
     NSDictionary* initOptions = [source objectForKey:@"initOptions"];
+
+    if(_player){
+        [_player pause];
+        _player = nil;
+    }
 
     _player = [[VLCMediaPlayer alloc] init];
 
