@@ -24,9 +24,12 @@ export default class VLCPlayer extends Component {
     this._onBuffering = this._onBuffering.bind(this);
     this._onOpen = this._onOpen.bind(this);
     this._onLoadStart = this._onLoadStart.bind(this);
+    this._onAspectRatioChanged = this._onAspectRatioChanged.bind(this);
     this.changeVideoAspectRatio = this.changeVideoAspectRatio.bind(this);
+    this.refreshAspectRatio = this.refreshAspectRatio.bind(this);
     this.subtitleTrack = this.subtitleTrack.bind(this);
     this.audioTrack = this.audioTrack.bind(this);
+    this.fullscreenType = this.fullscreenType.bind(this);
   }
   static defaultProps = {
     autoplay: true,
@@ -48,6 +51,10 @@ export default class VLCPlayer extends Component {
     this.setNativeProps({ audioTrack: track });
   }
 
+  fullscreenType(type) {
+    this.setNativeProps({ fullscreenType: type });
+  }
+
   resume(isResume) {
     this.setNativeProps({ resume: isResume });
   }
@@ -62,6 +69,17 @@ export default class VLCPlayer extends Component {
 
   changeVideoAspectRatio(ratio) {
     this.setNativeProps({ videoAspectRatio: ratio });
+  }
+
+  refreshAspectRatio() {
+    this.setNativeProps({ action: 'refreshAspectRatio' });
+  }  
+
+  _onAspectRatioChanged(event) {
+    console.log("aspectRatioChanged");
+    if (this.props.aspectRatioChanged) {
+      this.props.aspectRatioChanged(event.nativeEvent);
+    }
   }
 
   _assignRoot(component) {
@@ -99,6 +117,8 @@ export default class VLCPlayer extends Component {
   }
 
   _onEnded(event) {
+    console.log("onEnded");
+    console.log(event.nativeEvent);
     if (this.props.onEnd) {
       this.props.onEnd(event.nativeEvent);
     }
@@ -171,6 +191,7 @@ export default class VLCPlayer extends Component {
       onVideoPaused: this._onPaused,
       onVideoStopped: this._onStopped,
       onVideoBuffering: this._onBuffering,
+      onAspectRatioChanged: this._onAspectRatioChanged,
       progressUpdateInterval: 250,
     });
 
@@ -182,6 +203,7 @@ VLCPlayer.propTypes = {
   /* Native only */
   rate: PropTypes.number,
   seek: PropTypes.number,
+  fullscreenType: PropTypes.string,
   subtitleTrack: PropTypes.number,
   audioTrack: PropTypes.number,
   resume: PropTypes.bool,
@@ -209,12 +231,14 @@ VLCPlayer.propTypes = {
   onVideoStopped: PropTypes.func,
   onVideoBuffering: PropTypes.func,
   onVideoOpen: PropTypes.func,
+  onAspectRatioChanged: PropTypes.func,
 
   /* Wrapper component */
   source: PropTypes.oneOfType([PropTypes.object, PropTypes.number]),
 
   onError: PropTypes.func,
   onProgress: PropTypes.func,
+  onEnd: PropTypes.func,
   onEnded: PropTypes.func,
   onStopped: PropTypes.func,
   onPlaying: PropTypes.func,

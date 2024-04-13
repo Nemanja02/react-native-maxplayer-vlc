@@ -370,6 +370,8 @@ class ReactVlcPlayerView extends TextureView implements
                 }
             }
             mMediaPlayer.setMedia(m);
+            // https://github.com/razorRun/react-native-vlc-media-player/commit/dbbcff9ea08bf08dcfde506dc16e896bbf08b407
+            m.release();
             mMediaPlayer.setScale(0);
 
             if (!vlcOut.areViewsAttached()) {
@@ -410,6 +412,8 @@ class ReactVlcPlayerView extends TextureView implements
         vout.removeCallback(callback);
         vout.detachViews();
         //surfaceView.removeOnLayoutChangeListener(onLayoutChangeListener);
+        // https://github.com/razorRun/react-native-vlc-media-player/commit/1382cd512a0b2a88bed363eca44de3f90acdc5c0
+        mMediaPlayer.release();
         libvlc.release();
         libvlc = null;
         if(mProgressUpdateRunnable!=null){

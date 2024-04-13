@@ -3,7 +3,11 @@
 #import "React/RCTBridgeModule.h"
 #import "React/RCTEventDispatcher.h"
 #import "React/UIView+React.h"
+// #ifdef TARGET_OS_TV
+// #import <TVVLCKit/TVVLCKit.h>
+// #else
 #import <MobileVLCKit/MobileVLCKit.h>
+// #endif
 #import <AVFoundation/AVFoundation.h>
 static NSString *const statusKeyPath = @"status";
 static NSString *const playbackLikelyToKeepUpKeyPath = @"playbackLikelyToKeepUp";
@@ -21,7 +25,8 @@ static NSString *const playbackRate = @"rate";
     NSDictionary * _source;
     BOOL _paused;
     BOOL _started;
-
+    NSString *_fillAspectRatio;  // Dodajemo ovde kao instance varijablu
+    NSString *_videoAspectRatio;  // Dodajemo ovde kao instance varijablu
 }
 
 - (instancetype)initWithEventDispatcher:(RCTEventDispatcher *)eventDispatcher
@@ -84,6 +89,21 @@ static NSString *const playbackRate = @"rate";
     }
 }
 
+- (void)setFillAspectRatio:(NSString *)fillAspectRatio {
+    _fillAspectRatio = fillAspectRatio;
+}
+
+- (void)setupPlayerView { 
+    // Postavljanje frame-a na veličinu celog ekrana, ignorisanje safeAreaInsets
+    self.frame = [UIScreen mainScreen].bounds;
+
+    // Postavljanje boje pozadine za vizualnu proveru
+    self.backgroundColor = [UIColor redColor];  // Možete izabrati bilo koju boju
+
+    self.clipsToBounds = YES;
+    self.contentMode = UIViewContentModeScaleAspectFill;
+}
+
 -(void)setResume:(BOOL)autoplay
 {
     if(_player){
@@ -97,16 +117,21 @@ static NSString *const playbackRate = @"rate";
     _player = [[VLCMediaPlayer alloc] init];
 	// [bavv edit end]
 
+    self.frame = [UIScreen mainScreen].bounds; // Podesite frame na veličinu celog ekrana
     [_player setDrawable:self];
+    [self setupPlayerView]; // Postavite drawable na celu veličinu ekrana
     _player.delegate = self;
     _player.scaleFactor = 0;
     VLCMedia *media = [VLCMedia mediaWithURL:_uri];
 
-    NSMutableDictionary *options = [NSMutableDictionary new];
-    [options setObject:@"1" forKey:@"rtsp-tcp"];
-    [options setObject:@"1000" forKey:@"input-repeat"];
-    [media addOptions:[options copy]];
-    options = nil;
+    // NSMutableDictionary *options = [NSMutableDictionary new];
+    // [options setObject:@"1" forKey:@"rtsp-tcp"];
+    // [options setObject:@"1000" forKey:@"input-repeat"];
+    // [media addOptions:[options copy]];
+    // options = nil;
+    for (NSString* option in initOptions) {
+        [media addOption:[option stringByReplacingOccurrencesOfString:@"--" withString:@""]];
+    }
 
     _player.media = media;
     [[AVAudioSession sharedInstance] setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
@@ -118,6 +143,7 @@ static NSString *const playbackRate = @"rate";
 
 -(void)setSource:(NSDictionary *)source
 {
+    NSLog(@"setSource: %@",source);
     _source = source;
     // [bavv edit start]
     NSString* uri    = [source objectForKey:@"uri"];
@@ -125,6 +151,7 @@ static NSString *const playbackRate = @"rate";
     BOOL    autoplay = [RCTConvert BOOL:[source objectForKey:@"autoplay"]];
     NSURL* _uri    = [NSURL URLWithString:uri];
     NSDictionary* initOptions = [source objectForKey:@"initOptions"];
+    // [self setFillAspectRatio:[source objectForKey:@"fillAspectRatio"]];
 
     if(_player){
         [_player pause];
@@ -141,12 +168,18 @@ static NSString *const playbackRate = @"rate";
 
     VLCMedia *media = [VLCMedia mediaWithURL:_uri];
 
-    NSMutableDictionary *options = [NSMutableDictionary new];
-    [options setObject:@"1" forKey:@"rtsp-tcp"];
-    [options setObject:@"1000" forKey:@"input-repeat"];
-    [options setObject:agent forKey:@"http-user-agent"];
-    [media addOptions:[options copy]];
-    options = nil;
+    // NSMutableDictionary *options = [NSMutableDictionary new];
+    // [options setObject:@"1" forKey:@"rtsp-tcp"];
+    // [options setObject:@"1000" forKey:@"input-repeat"];
+    // [options setObject:agent forKey:@"http-user-agent"];
+    // [media addOptions:[options copy]];
+    // options = nil;
+    // user agent
+    [media addOption:[agent stringByReplacingOccurrencesOfString:@"--" withString:@""]];
+
+    for (NSString* option in initOptions) {
+        [media addOption:[option stringByReplacingOccurrencesOfString:@"--" withString:@""]];
+    }
 
     _player.media = media;
     [[AVAudioSession sharedInstance] setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
@@ -298,6 +331,14 @@ static NSString *const playbackRate = @"rate";
     [_player setCurrentAudioTrackIndex:track];
 }
 
+- (void)setFullScreenType:(NSString*)value
+{
+    // NSLog(@"setFullScreenType: %@", value);
+    // [self refreshAspectRatio];
+
+}
+
+
 - (void)setSeek:(int)pos
 {
     int currentTime = [[_player time] intValue];
@@ -323,13 +364,67 @@ static NSString *const playbackRate = @"rate";
     [_player setRate:rate];
 }
 
--(void)setVideoAspectRatio:(NSString *)ratio{
-    if ([ratio isEqualToString:@"original"]) {
-        ratio = @"DEFAULT";
+// Metoda za izračunavanje najvećeg zajedničkog delioca (NZD)
+- (NSInteger)greatestCommonDivisorOfA:(NSInteger)a b:(NSInteger)b {
+    while (b != 0) {
+        NSInteger temp = b;
+        b = a % b;
+        a = temp;
     }
+    return a;
+}
+
+-(void)setVideoAspectRatio:(NSString *)ratio {
+    NSLog(@"setVideoAspectRatio: %@", ratio);
+    _videoAspectRatio = ratio;
+    if ([ratio isEqualToString:@"original"]) {
+        ratio = @"0:0";
+    } else if ([ratio isEqualToString:@"fill"]) {
+        // Pozivanje metode za popunjavanje videa preko celog prostora
+        // [self applyVideoFill];
+        CGFloat viewWidth = self.bounds.size.width;
+        CGFloat viewHeight = self.bounds.size.height;
+        // ratio = [NSString stringWithFormat:@"%f:%f", viewWidth, viewHeight];
+            // Preuzmite dimenzije view-a
+
+        // Izračunajte NZD za dimenzije view-a
+        NSInteger gcd = [self greatestCommonDivisorOfA:viewWidth b:viewHeight];
+
+        // Koristite NZD za smanjenje width i height na celobrojne vrednosti
+        NSInteger reducedWidth = viewWidth / gcd;
+        NSInteger reducedHeight = viewHeight / gcd;
+
+        // Postavite aspect ratio koristeći smanjene vrednosti
+        ratio = [NSString stringWithFormat:@"%ld:%ld", (long)reducedWidth, (long)reducedHeight];
+        // self.onVideoOpen(@{
+        //     @"viewWidth": [NSNumber numberWithFloat:self.bounds.size.width],
+        //     @"viewHeight": [NSNumber numberWithFloat:self.bounds.size.height],
+        //     @"ratio": ratio
+        // });
+
+        // [_player setDrawable:self];
+        // [self setupPlayerView]; // Postavite drawable na celu veličinu ekrana
+        [self setNeedsDisplay]; // Osvežite layout nakon promene aspect ratio-a
+        // _player.scaleFactor = 0;
+
+    }
+    
     char *char_content = [ratio cStringUsingEncoding:NSASCIIStringEncoding];
     [_player setVideoAspectRatio:char_content];
+    self.onAspectRatioChanged(@{
+        // @"target": self.reactTag,
+        @"ratio": ratio
+    });
 }
+
+- (void)refreshAspectRatio {
+    NSLog(@"refreshAspectRatio");
+    NSLog(@"videoAspectRatio: %@", _videoAspectRatio);
+    [self setVideoAspectRatio:_videoAspectRatio];
+    [self setNeedsLayout];
+    [self layoutIfNeeded];
+}
+
 
 - (void)setMuted:(BOOL)value
 {
@@ -356,6 +451,14 @@ static NSString *const playbackRate = @"rate";
     NSLog(@"removeFromSuperview");
     [self _release];
     [super removeFromSuperview];
+}
+
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    NSLog(@"layoutSubviews");
+
+    [self setVideoAspectRatio:_videoAspectRatio];
 }
 
 @end
