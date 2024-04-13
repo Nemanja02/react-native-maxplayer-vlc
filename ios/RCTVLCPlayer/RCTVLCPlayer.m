@@ -25,8 +25,9 @@ static NSString *const playbackRate = @"rate";
     NSDictionary * _source;
     BOOL _paused;
     BOOL _started;
-    NSString *_fillAspectRatio;  // Dodajemo ovde kao instance varijablu
-    NSString *_videoAspectRatio;  // Dodajemo ovde kao instance varijablu
+    NSString *_videoAspectRatio;
+    NSString *_videoWidth;
+    NSString *_videoHeight;
 }
 
 - (instancetype)initWithEventDispatcher:(RCTEventDispatcher *)eventDispatcher
@@ -89,16 +90,11 @@ static NSString *const playbackRate = @"rate";
     }
 }
 
-- (void)setFillAspectRatio:(NSString *)fillAspectRatio {
-    _fillAspectRatio = fillAspectRatio;
-}
-
 - (void)setupPlayerView { 
     // Postavljanje frame-a na veličinu celog ekrana, ignorisanje safeAreaInsets
     self.frame = [UIScreen mainScreen].bounds;
 
-    // Postavljanje boje pozadine za vizualnu proveru
-    self.backgroundColor = [UIColor redColor];  // Možete izabrati bilo koju boju
+    // self.backgroundColor = [UIColor redColor];
 
     self.clipsToBounds = YES;
     self.contentMode = UIViewContentModeScaleAspectFill;
@@ -117,9 +113,10 @@ static NSString *const playbackRate = @"rate";
     _player = [[VLCMediaPlayer alloc] init];
 	// [bavv edit end]
 
-    self.frame = [UIScreen mainScreen].bounds; // Podesite frame na veličinu celog ekrana
+    self.frame = [UIScreen mainScreen].bounds; // Podesite frame na veličinu celog ekrana  // ovo možda nije neophodno
     [_player setDrawable:self];
-    [self setupPlayerView]; // Postavite drawable na celu veličinu ekrana
+    [self setupPlayerView]; // ovo možda nije neophodno
+
     _player.delegate = self;
     _player.scaleFactor = 0;
     VLCMedia *media = [VLCMedia mediaWithURL:_uri];
@@ -151,7 +148,6 @@ static NSString *const playbackRate = @"rate";
     BOOL    autoplay = [RCTConvert BOOL:[source objectForKey:@"autoplay"]];
     NSURL* _uri    = [NSURL URLWithString:uri];
     NSDictionary* initOptions = [source objectForKey:@"initOptions"];
-    // [self setFillAspectRatio:[source objectForKey:@"fillAspectRatio"]];
 
     if(_player){
         [_player pause];
@@ -220,6 +216,13 @@ static NSString *const playbackRate = @"rate";
                     for (NSUInteger i = 0; i < [_player numberOfAudioTracks]; i++) {
                         audio[audio_indexes[i]] = audio_names[i];
                     }
+
+                    // get video width and height
+                    _videoWidth = [NSString stringWithFormat:@"%f", _player.videoSize.width];
+                    _videoHeight = [NSString stringWithFormat:@"%f", _player.videoSize.height];
+
+                    NSLog(@"_videoWidth: %@", _videoWidth);
+                    NSLog(@"_videoHeight: %@", _videoHeight);
                     self.onVideoOpen(@{
                                          @"target": self.reactTag,
                                          @"subtitles": subtitles,
@@ -331,14 +334,6 @@ static NSString *const playbackRate = @"rate";
     [_player setCurrentAudioTrackIndex:track];
 }
 
-- (void)setFullScreenType:(NSString*)value
-{
-    // NSLog(@"setFullScreenType: %@", value);
-    // [self refreshAspectRatio];
-
-}
-
-
 - (void)setSeek:(int)pos
 {
     int currentTime = [[_player time] intValue];
@@ -364,7 +359,6 @@ static NSString *const playbackRate = @"rate";
     [_player setRate:rate];
 }
 
-// Metoda za izračunavanje najvećeg zajedničkog delioca (NZD)
 - (NSInteger)greatestCommonDivisorOfA:(NSInteger)a b:(NSInteger)b {
     while (b != 0) {
         NSInteger temp = b;
@@ -378,35 +372,35 @@ static NSString *const playbackRate = @"rate";
     NSLog(@"setVideoAspectRatio: %@", ratio);
     _videoAspectRatio = ratio;
     if ([ratio isEqualToString:@"original"]) {
-        ratio = @"0:0";
+        // ratio = @"DEFAULT";
+        // default nece iz nekog razloga da radi
+        // ratio = @"0";
+        // Pa cemo da cuvamo video width i height
+
+        if (_videoWidth == nil || _videoHeight == nil) {
+            ratio = @"16:9";
+        } else {
+            NSInteger gcd = [self greatestCommonDivisorOfA:[_videoWidth integerValue] b:[_videoHeight integerValue]];
+
+            // NZD za smanjenje width i height na celobrojne vrednosti
+            NSInteger reducedWidth = [_videoWidth integerValue] / gcd;
+            NSInteger reducedHeight = [_videoHeight integerValue] / gcd;
+
+            ratio = [NSString stringWithFormat:@"%ld:%ld", (long)reducedWidth, (long)reducedHeight];
+        }
+
+
     } else if ([ratio isEqualToString:@"fill"]) {
-        // Pozivanje metode za popunjavanje videa preko celog prostora
-        // [self applyVideoFill];
         CGFloat viewWidth = self.bounds.size.width;
         CGFloat viewHeight = self.bounds.size.height;
-        // ratio = [NSString stringWithFormat:@"%f:%f", viewWidth, viewHeight];
-            // Preuzmite dimenzije view-a
 
-        // Izračunajte NZD za dimenzije view-a
         NSInteger gcd = [self greatestCommonDivisorOfA:viewWidth b:viewHeight];
 
-        // Koristite NZD za smanjenje width i height na celobrojne vrednosti
+        // NZD za smanjenje width i height na celobrojne vrednosti
         NSInteger reducedWidth = viewWidth / gcd;
         NSInteger reducedHeight = viewHeight / gcd;
 
-        // Postavite aspect ratio koristeći smanjene vrednosti
         ratio = [NSString stringWithFormat:@"%ld:%ld", (long)reducedWidth, (long)reducedHeight];
-        // self.onVideoOpen(@{
-        //     @"viewWidth": [NSNumber numberWithFloat:self.bounds.size.width],
-        //     @"viewHeight": [NSNumber numberWithFloat:self.bounds.size.height],
-        //     @"ratio": ratio
-        // });
-
-        // [_player setDrawable:self];
-        // [self setupPlayerView]; // Postavite drawable na celu veličinu ekrana
-        [self setNeedsDisplay]; // Osvežite layout nakon promene aspect ratio-a
-        // _player.scaleFactor = 0;
-
     }
     
     char *char_content = [ratio cStringUsingEncoding:NSASCIIStringEncoding];
@@ -416,15 +410,6 @@ static NSString *const playbackRate = @"rate";
         @"ratio": ratio
     });
 }
-
-- (void)refreshAspectRatio {
-    NSLog(@"refreshAspectRatio");
-    NSLog(@"videoAspectRatio: %@", _videoAspectRatio);
-    [self setVideoAspectRatio:_videoAspectRatio];
-    [self setNeedsLayout];
-    [self layoutIfNeeded];
-}
-
 
 - (void)setMuted:(BOOL)value
 {

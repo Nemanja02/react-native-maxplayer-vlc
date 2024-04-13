@@ -29,7 +29,6 @@ export default class VLCPlayer extends Component {
     this.refreshAspectRatio = this.refreshAspectRatio.bind(this);
     this.subtitleTrack = this.subtitleTrack.bind(this);
     this.audioTrack = this.audioTrack.bind(this);
-    this.fullscreenType = this.fullscreenType.bind(this);
   }
   static defaultProps = {
     autoplay: true,
@@ -49,10 +48,6 @@ export default class VLCPlayer extends Component {
 
   audioTrack(track) {
     this.setNativeProps({ audioTrack: track });
-  }
-
-  fullscreenType(type) {
-    this.setNativeProps({ fullscreenType: type });
   }
 
   resume(isResume) {
@@ -203,7 +198,6 @@ VLCPlayer.propTypes = {
   /* Native only */
   rate: PropTypes.number,
   seek: PropTypes.number,
-  fullscreenType: PropTypes.string,
   subtitleTrack: PropTypes.number,
   audioTrack: PropTypes.number,
   resume: PropTypes.bool,

@@ -10,21 +10,18 @@ RCT_EXPORT_MODULE();
 
 - (UIView *)view
 {
-    // return [[RCTVLCPlayer alloc] initWithEventDispatcher:self.bridge.eventDispatcher];
     RCTVLCPlayer *player = [[RCTVLCPlayer alloc] initWithEventDispatcher:self.bridge.eventDispatcher];
     
     // Postavljanje frame-a na veličinu celog ekrana, ignorisanje safeAreaInsets
     player.frame = [UIScreen mainScreen].bounds;
 
-    // Postavljanje boje pozadine za vizualnu proveru
-    player.backgroundColor = [UIColor redColor];  // Možete izabrati bilo koju boju
-
-    // Postavljanje drugih svojstava view-a
     player.clipsToBounds = YES;
     player.contentMode = UIViewContentModeScaleAspectFill;
 
-    player.layer.borderWidth = 2.0;
-    player.layer.borderColor = [UIColor greenColor].CGColor;
+    // DEBUG IVICE
+    // player.backgroundColor = [UIColor redColor];
+    // player.layer.borderWidth = 2.0;
+    // player.layer.borderColor = [UIColor greenColor].CGColor;
     return player;
 }
 
@@ -54,7 +51,6 @@ RCT_EXPORT_VIEW_PROPERTY(rate, float);
 RCT_EXPORT_VIEW_PROPERTY(resume, BOOL);
 RCT_EXPORT_VIEW_PROPERTY(videoAspectRatio, NSString);
 RCT_EXPORT_VIEW_PROPERTY(snapshotPath, NSString);
-RCT_EXPORT_VIEW_PROPERTY(fullscreenType, NSString);
 RCT_CUSTOM_VIEW_PROPERTY(muted, BOOL, RCTVLCPlayer)
 {
     BOOL isMuted = [RCTConvert BOOL:json];
