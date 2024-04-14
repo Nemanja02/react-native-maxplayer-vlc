@@ -102,6 +102,7 @@ static NSString *const playbackRate = @"rate";
 
 -(void)setResume:(BOOL)autoplay
 {
+    NSLog(@"setResume: %i",autoplay);
     if(_player){
         [self _release];
     }
@@ -176,10 +177,12 @@ static NSString *const playbackRate = @"rate";
     for (NSString* option in initOptions) {
         [media addOption:[option stringByReplacingOccurrencesOfString:@"--" withString:@""]];
     }
+    // log init options
+    NSLog(@"initOptions: %@",initOptions);
 
     _player.media = media;
     [[AVAudioSession sharedInstance] setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
-    NSLog(@"autoplay: %i",autoplay);
+
     self.onVideoLoadStart(@{
                            @"target": self.reactTag
                            });
@@ -196,10 +199,11 @@ static NSString *const playbackRate = @"rate";
 {
 
      NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-     NSLog(@"userInfo %@",[aNotification userInfo]);
-     NSLog(@"standardUserDefaults %@",defaults);
+    //  NSLog(@"userInfo %@",[aNotification userInfo]);
+    //  NSLog(@"standardUserDefaults %@",defaults);
     if(_player){
         VLCMediaPlayerState state = _player.state;
+        // NSLog(@"state %i",state);
         switch (state) {
             case VLCMediaPlayerStateESAdded: {
                 NSLog(@"VLCMediaPlayerStateESAdded %i",1);
@@ -253,7 +257,7 @@ static NSString *const playbackRate = @"rate";
                 break;
             }
             case VLCMediaPlayerStateBuffering:
-                NSLog(@"VLCMediaPlayerStateBuffering %i",1);
+                // NSLog(@"VLCMediaPlayerStateBuffering %i",1);
                 self.onVideoBuffering(@{
                                         @"target": self.reactTag
                                         });

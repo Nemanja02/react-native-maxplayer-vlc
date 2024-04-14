@@ -71,7 +71,6 @@ export default class VLCPlayer extends Component {
   }  
 
   _onAspectRatioChanged(event) {
-    console.log("aspectRatioChanged");
     if (this.props.aspectRatioChanged) {
       this.props.aspectRatioChanged(event.nativeEvent);
     }
@@ -112,8 +111,6 @@ export default class VLCPlayer extends Component {
   }
 
   _onEnded(event) {
-    console.log("onEnded");
-    console.log(event.nativeEvent);
     if (this.props.onEnd) {
       this.props.onEnd(event.nativeEvent);
     }
@@ -162,8 +159,6 @@ export default class VLCPlayer extends Component {
     source.isNetwork = isNetwork;
     source.autoplay = this.props.autoplay;
     source.initOptions = source.initOptions || [];
-    //repeat the input media
-    source.initOptions.push("--input-repeat=1000");
     const nativeProps = Object.assign({}, this.props);
     Object.assign(nativeProps, {
       style: [styles.base, nativeProps.style],
@@ -219,7 +214,9 @@ VLCPlayer.propTypes = {
   onVideoLoadStart: PropTypes.func,
   onVideoError: PropTypes.func,
   onVideoProgress: PropTypes.func,
+  // oba pozivaju istu metodu, debil je ovaj koji je pravio ovaj modul nije dosledan
   onVideoEnded: PropTypes.func,
+  onVideoEnd: PropTypes.func,
   onVideoPlaying: PropTypes.func,
   onVideoPaused: PropTypes.func,
   onVideoStopped: PropTypes.func,
