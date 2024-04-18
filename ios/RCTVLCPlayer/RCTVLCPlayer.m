@@ -28,6 +28,7 @@ static NSString *const playbackRate = @"rate";
     NSString *_videoAspectRatio;
     NSString *_videoWidth;
     NSString *_videoHeight;
+    NSString *_mediaType;
 }
 
 - (instancetype)initWithEventDispatcher:(RCTEventDispatcher *)eventDispatcher
@@ -108,8 +109,13 @@ static NSString *const playbackRate = @"rate";
     }
     // [bavv edit start]
     NSString* uri    = [_source objectForKey:@"uri"];
+    NSString* mediaType    = [_source objectForKey:@"mediaType"];
     NSURL* _uri    = [NSURL URLWithString:uri];
     NSDictionary* initOptions = [_source objectForKey:@"initOptions"];
+
+    if(mediaType){
+        _mediaType = mediaType;
+    }
 
     _player = [[VLCMediaPlayer alloc] init];
 	// [bavv edit end]
@@ -146,9 +152,15 @@ static NSString *const playbackRate = @"rate";
     // [bavv edit start]
     NSString* uri    = [source objectForKey:@"uri"];
     NSString* agent    = [source objectForKey:@"userAgent"];
+    NSString* mediaType    = [source objectForKey:@"mediaType"];
     BOOL    autoplay = [RCTConvert BOOL:[source objectForKey:@"autoplay"]];
     NSURL* _uri    = [NSURL URLWithString:uri];
     NSDictionary* initOptions = [source objectForKey:@"initOptions"];
+
+
+    if(mediaType){
+        _mediaType = mediaType;
+    }
 
     if(_player){
         [_player pause];
@@ -188,6 +200,11 @@ static NSString *const playbackRate = @"rate";
                            });
 //    if(autoplay)
         [self play];
+
+    // set video aspect ratio
+    // NSLog(@"INIT_videoAspectRatio: %@",_videoAspectRatio);
+    [self setVideoAspectRatio:_videoAspectRatio];
+
 }
 
 - (void)mediaPlayerTimeChanged:(NSNotification *)aNotification
@@ -221,12 +238,12 @@ static NSString *const playbackRate = @"rate";
                         audio[audio_indexes[i]] = audio_names[i];
                     }
 
-                    // get video width and height
-                    _videoWidth = [NSString stringWithFormat:@"%f", _player.videoSize.width];
-                    _videoHeight = [NSString stringWithFormat:@"%f", _player.videoSize.height];
+                    // // get video width and height
+                    // _videoWidth = [NSString stringWithFormat:@"%f", _player.videoSize.width];
+                    // _videoHeight = [NSString stringWithFormat:@"%f", _player.videoSize.height];
 
-                    NSLog(@"_videoWidth: %@", _videoWidth);
-                    NSLog(@"_videoHeight: %@", _videoHeight);
+                    // NSLog(@"_videoWidth: %@", _videoWidth);
+                    // NSLog(@"_videoHeight: %@", _videoHeight);
                     self.onVideoOpen(@{
                                          @"target": self.reactTag,
                                          @"subtitles": subtitles,
@@ -277,6 +294,11 @@ static NSString *const playbackRate = @"rate";
                 int remainingTime = [[_player remainingTime] intValue];
                 int duration      = [_player.media.length intValue];
 
+                // if mediaType is live, replay stream
+                if ([_mediaType isEqualToString:@"live"]) {
+                    [self replay];
+                }
+
                 self.onVideoEnded(@{
                                     @"target": self.reactTag,
                                     @"currentTime": [NSNumber numberWithInt:currentTime],
@@ -313,6 +335,16 @@ static NSString *const playbackRate = @"rate";
                                    @"duration":[NSNumber numberWithInt:duration],
                                    @"position":[NSNumber numberWithFloat:_player.position]
                                    });
+        } else if (_mediaType && [_mediaType isEqualToString:@"live"] || [_mediaType isEqualToString:@"timeshift"]) {
+                
+            self.onVideoProgress(@{
+                    @"target": self.reactTag,
+                    @"mediaType": _mediaType,
+                    @"currentTime": [NSNumber numberWithInt:currentTime],
+                    @"remainingTime": [NSNumber numberWithInt:remainingTime],
+                    @"duration":[NSNumber numberWithInt:duration],
+                    @"position":[NSNumber numberWithFloat:_player.position]
+            });
         }
     }
 }
@@ -337,6 +369,18 @@ static NSString *const playbackRate = @"rate";
 {
     [_player setCurrentAudioTrackIndex:track];
 }
+
+// replay stream
+- (void)replay
+{
+    NSLog(@"replay");
+    if(_player){
+        [_player stop];
+        [_player play];
+    }
+}
+
+// RETRY STREAM WITH 5 RETRIES
 
 - (void)setSeek:(int)pos
 {

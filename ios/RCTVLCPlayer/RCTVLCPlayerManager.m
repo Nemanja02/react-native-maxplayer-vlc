@@ -45,6 +45,7 @@ RCT_EXPORT_VIEW_PROPERTY(onAspectRatioChanged, RCTDirectEventBlock);
 RCT_EXPORT_VIEW_PROPERTY(source, NSDictionary);
 RCT_EXPORT_VIEW_PROPERTY(paused, BOOL);
 RCT_EXPORT_VIEW_PROPERTY(seek, int);
+// RCT_EXPORT_VIEW_PROPERTY(retryStream, BOOL);
 RCT_EXPORT_VIEW_PROPERTY(subtitleTrack, int);
 RCT_EXPORT_VIEW_PROPERTY(audioTrack, int);
 RCT_EXPORT_VIEW_PROPERTY(rate, float);
