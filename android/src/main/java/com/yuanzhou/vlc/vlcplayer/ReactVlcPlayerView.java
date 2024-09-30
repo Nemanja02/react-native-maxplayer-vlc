@@ -61,7 +61,7 @@ class ReactVlcPlayerView extends TextureView implements
     private int preVolume = 200;
     private String aspectRatio = null;
 
-    private float mProgressUpdateInterval = 250;
+    private float mProgressUpdateInterval = 150;
     private Handler mProgressUpdateHandler = new Handler();
     private Runnable mProgressUpdateRunnable = null;
 
@@ -145,33 +145,68 @@ class ReactVlcPlayerView extends TextureView implements
     public void onAudioFocusChange(int focusChange) {
     }
 
-    private void setProgressUpdateRunnable() {
-        if (mMediaPlayer != null){
-            mProgressUpdateRunnable = new Runnable() {
+    // private void setProgressUpdateRunnable() {
+    //     if (mMediaPlayer != null){
+    //         mProgressUpdateRunnable = new Runnable() {
+    //             @Override
+    //             public void run() {
+    //                 if (mMediaPlayer != null && !isPaused) {
+    //                     long currentTime = 0;
+    //                     long totalLength = 0;
+    //                     WritableMap event = Arguments.createMap();
+    //                     boolean isPlaying = mMediaPlayer.isPlaying();
+    //                     currentTime = mMediaPlayer.getTime();
+    //                     float position = mMediaPlayer.getPosition();
+    //                     totalLength = mMediaPlayer.getLength();
+    //                     WritableMap map = Arguments.createMap();
+    //                     map.putBoolean("isPlaying", isPlaying);
+    //                     map.putDouble("position", position);
+    //                     map.putDouble("currentTime", currentTime);
+    //                     map.putDouble("duration", totalLength);
+    //                     eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_PROGRESS);
+    //                 }
+    //                 mProgressUpdateHandler.postDelayed(mProgressUpdateRunnable, Math.round(mProgressUpdateInterval));    
+    //             }
+    //         };
+    //         mProgressUpdateHandler.postDelayed(mProgressUpdateRunnable,0);
+    //     }
+            
+    // }
+
+        private void setProgressUpdateRunnable() {
+        if (mMediaPlayer != null && mProgressUpdateInterval > 0){
+            new Thread() {
                 @Override
                 public void run() {
-                    if (mMediaPlayer != null && !isPaused) {
-                        long currentTime = 0;
-                        long totalLength = 0;
-                        WritableMap event = Arguments.createMap();
-                        boolean isPlaying = mMediaPlayer.isPlaying();
-                        currentTime = mMediaPlayer.getTime();
-                        float position = mMediaPlayer.getPosition();
-                        totalLength = mMediaPlayer.getLength();
-                        WritableMap map = Arguments.createMap();
-                        map.putBoolean("isPlaying", isPlaying);
-                        map.putDouble("position", position);
-                        map.putDouble("currentTime", currentTime);
-                        map.putDouble("duration", totalLength);
-                        eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_PROGRESS);
-                    }
-                    mProgressUpdateHandler.postDelayed(mProgressUpdateRunnable, Math.round(mProgressUpdateInterval));    
+                    super.run();
+
+                    mProgressUpdateRunnable = () -> {
+                        if (mMediaPlayer != null && !isPaused) {
+                            long currentTime = 0;
+                            long totalLength = 0;
+                            WritableMap event = Arguments.createMap();
+                            boolean isPlaying = mMediaPlayer.isPlaying();
+                            currentTime = mMediaPlayer.getTime();
+                            float position = mMediaPlayer.getPosition();
+                            totalLength = mMediaPlayer.getLength();
+                            WritableMap map = Arguments.createMap();
+                            map.putBoolean("isPlaying", isPlaying);
+                            map.putDouble("position", position);
+                            map.putDouble("currentTime", currentTime);
+                            map.putDouble("duration", totalLength);
+                            eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_PROGRESS);
+                        }
+
+                        mProgressUpdateHandler.postDelayed(mProgressUpdateRunnable, Math.round(mProgressUpdateInterval));
+                    };
+
+                    mProgressUpdateHandler.postDelayed(mProgressUpdateRunnable, 0);
                 }
-            };
-            mProgressUpdateHandler.postDelayed(mProgressUpdateRunnable,0);
+            }.start();
         }
-            
     }
+
+
 
 
     /*************
@@ -622,10 +657,13 @@ class ReactVlcPlayerView extends TextureView implements
                     try {
                         MediaPlayer.TrackDescription[] titles = mMediaPlayer.getSpuTracks();
                         WritableMap tracks = Arguments.createMap();
-                        for (int i = 0; i < titles.length; i++) {
-                            tracks.putString(titles[i].id + "", titles[i].name);
-                            System.out.println("subtitles: " + titles[i].id + " " + titles[i].name);
+                        if(mMediaPlayer.getSpuTracksCount() > 0) {
+                            for (int i = 0; i < titles.length; i++) {
+                                tracks.putString(titles[i].id + "", titles[i].name);
+                                System.out.println("subtitles: " + titles[i].id + " " + titles[i].name);
+                            }
                         }
+
                         map.putMap("subtitles", tracks);
                     } catch (Exception e) {
                         WritableMap tracks = Arguments.createMap();
@@ -635,9 +673,11 @@ class ReactVlcPlayerView extends TextureView implements
                     try {
                         MediaPlayer.TrackDescription[] titles = mMediaPlayer.getAudioTracks();
                         WritableMap tracks = Arguments.createMap();
-                        for (int i = 0; i < titles.length; i++) {
-                            tracks.putString(titles[i].id + "", titles[i].name);
-                            System.out.println("audio_tracks: " + titles[i].id + " " + titles[i].name);
+                        if(mMediaPlayer.getAudioTracksCount() > 0) {
+                            for (int i = 0; i < titles.length; i++) {
+                                tracks.putString(titles[i].id + "", titles[i].name);
+                                System.out.println("audio_tracks: " + titles[i].id + " " + titles[i].name);
+                            }
                         }
                         map.putMap("audio_tracks", tracks);
                     } catch (Exception e) {
