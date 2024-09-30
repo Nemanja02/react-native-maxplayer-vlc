@@ -221,9 +221,13 @@ class ReactVlcPlayerView extends TextureView implements
                 mVideoWidth = view.getWidth(); // 获取宽度
                 mVideoHeight = view.getHeight(); // 获取高度
                 if (mMediaPlayer != null) {
-                    IVLCVout vlcOut = mMediaPlayer.getVLCVout();
-                    vlcOut.setWindowSize(mVideoWidth, mVideoHeight);
-                    applyAspectRatio();
+                    try {
+                        IVLCVout vlcOut = mMediaPlayer.getVLCVout();
+                        vlcOut.setWindowSize(mVideoWidth, mVideoHeight);
+                        applyAspectRatio();
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
                 }
             }
         }
@@ -463,26 +467,42 @@ class ReactVlcPlayerView extends TextureView implements
      */
     public void seekTo(long time) {
         if (mMediaPlayer != null) {
-            mMediaPlayer.setTime(time);
+            try {
+                mMediaPlayer.setTime(time);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
     }
 
     public void setSubtitleTrack(int trackIndex) {
         if (mMediaPlayer != null) {
-            mMediaPlayer.setSpuTrack(trackIndex);
+            try {
+                mMediaPlayer.setSpuTrack(trackIndex);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
     }
 
     public void setAudioTrack(int trackIndex) {
         if (mMediaPlayer != null) {
-            mMediaPlayer.setAudioTrack(trackIndex);
+            try {
+                mMediaPlayer.setAudioTrack(trackIndex);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
     }
 
     public void setPosition(float position) {
         if (mMediaPlayer != null) {
             if (position >= 0 && position <= 1) {
-                mMediaPlayer.setPosition(position);
+                try {
+                    mMediaPlayer.setPosition(position);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
             }
         }
     }
@@ -513,7 +533,11 @@ class ReactVlcPlayerView extends TextureView implements
      */
     public void setRateModifier(float rateModifier) {
         if (mMediaPlayer != null) {
-            mMediaPlayer.setRate(rateModifier);
+            try {
+                mMediaPlayer.setRate(rateModifier);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
     }
 
@@ -529,7 +553,11 @@ class ReactVlcPlayerView extends TextureView implements
      */
     public void setVolumeModifier(int volumeModifier) {
         if (mMediaPlayer != null) {
-            mMediaPlayer.setVolume(volumeModifier);
+            try {
+                mMediaPlayer.setVolume(volumeModifier);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
     }
 
@@ -540,11 +568,15 @@ class ReactVlcPlayerView extends TextureView implements
      */
     public void setMutedModifier(boolean muted) {
         if (mMediaPlayer != null) {
-            if (muted) {
-                this.preVolume = mMediaPlayer.getVolume();
-                mMediaPlayer.setVolume(0);
-            } else {
-                mMediaPlayer.setVolume(this.preVolume);
+            try {
+                if (muted) {
+                    this.preVolume = mMediaPlayer.getVolume();
+                    mMediaPlayer.setVolume(0);
+                } else {
+                    mMediaPlayer.setVolume(this.preVolume);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         }
     }
@@ -557,13 +589,17 @@ class ReactVlcPlayerView extends TextureView implements
     public void setPausedModifier(boolean paused) {
         // Log.i("paused:", "" + paused + ":" + mMediaPlayer);
         if (mMediaPlayer != null) {
-            if (paused) {
-                isPaused = true;
-                mMediaPlayer.pause();
-            } else {
-                isPaused = false;
-                mMediaPlayer.play();
-                // Log.i("do play:", true + "");
+            try {
+                if (paused) {
+                    isPaused = true;
+                    mMediaPlayer.pause();
+                } else {
+                    isPaused = false;
+                    mMediaPlayer.play();
+                    // Log.i("do play:", true + "");
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         } else {
             createPlayer(!paused, false);
@@ -597,16 +633,20 @@ class ReactVlcPlayerView extends TextureView implements
 
     public void applyAspectRatio() {
         if (mMediaPlayer != null) {
-            if (aspectRatio == null || aspectRatio.equals("original")) {
-                aspectRatio = null;
-            } else if (aspectRatio.equals("fill")) {
-                if (mVideoWidth > 0 && mVideoHeight > 0) {
-                    // vlcOut.setWindowSize(mVideoWidth, mVideoHeight);
-                    mMediaPlayer.setAspectRatio(mVideoWidth + ":" + mVideoHeight);
+            try {
+                if (aspectRatio == null || aspectRatio.equals("original")) {
+                    aspectRatio = null;
+                } else if (aspectRatio.equals("fill")) {
+                    if (mVideoWidth > 0 && mVideoHeight > 0) {
+                        // vlcOut.setWindowSize(mVideoWidth, mVideoHeight);
+                        mMediaPlayer.setAspectRatio(mVideoWidth + ":" + mVideoHeight);
+                    }
+                    return;
                 }
-                return;
+                mMediaPlayer.setAspectRatio(aspectRatio);
+            } catch (Exception e) {
+                e.printStackTrace();
             }
-            mMediaPlayer.setAspectRatio(aspectRatio);
         }
     }
 
