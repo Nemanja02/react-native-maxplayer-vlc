@@ -224,18 +224,33 @@ static NSString *const playbackRate = @"rate";
         switch (state) {
             case VLCMediaPlayerStateESAdded: {
                 NSLog(@"VLCMediaPlayerStateESAdded %i",1);
-                NSMutableDictionary *subtitles  = [NSMutableDictionary dictionary];
+                    // save number of subtitles and audio tracks in temp variables
+                    NSUInteger numberOfSubtitles = [_player numberOfSubtitlesTracks];
+                    NSUInteger numberOfAudioTracks = [_player numberOfAudioTracks];
+
+                    NSMutableDictionary *subtitles  = [NSMutableDictionary dictionary];
+                    NSMutableDictionary *audio  = [NSMutableDictionary dictionary];
+
                     NSArray* sub_indexes = [_player videoSubTitlesIndexes];
                     NSArray* sub_names = [_player videoSubTitlesNames];
-                    for (NSUInteger i = 0; i < [_player numberOfSubtitlesTracks]; i++) {
-                        subtitles[sub_indexes[i]] = sub_names[i];
+                    // for (NSUInteger i = 0; i < [_player numberOfSubtitlesTracks]; i++) {
+                    //     subtitles[sub_indexes[i]] = sub_names[i];
+                    // }
+                    for (NSUInteger i = 0; i < numberOfSubtitles; i++) {
+                        if (sub_indexes[i] && sub_names[i]) {
+                            subtitles[sub_indexes[i]] = sub_names[i];
+                        }
                     }
 
-                    NSMutableDictionary *audio  = [NSMutableDictionary dictionary];
                     NSArray* audio_indexes = [_player audioTrackIndexes];
                     NSArray* audio_names = [_player audioTrackNames];
-                    for (NSUInteger i = 0; i < [_player numberOfAudioTracks]; i++) {
-                        audio[audio_indexes[i]] = audio_names[i];
+                    // for (NSUInteger i = 0; i < [_player numberOfAudioTracks]; i++) {
+                    //     audio[audio_indexes[i]] = audio_names[i];
+                    // }
+                    for (NSUInteger i = 0; i < numberOfAudioTracks; i++) {
+                        if (audio_indexes[i] && audio_names[i]) {
+                            audio[audio_indexes[i]] = audio_names[i];
+                        }
                     }
 
                     // // get video width and height
