@@ -16,5 +16,5 @@ Pod::Spec.new do |s|
   # s.dependency 'MobileVLCKit', '3.3.17'
   # s.dependency 'TVVLCKit', '3.5.1'
   s.ios.dependency 'MobileVLCKit', '3.6.0'
-  s.tvos.dependency 'TVVLCKit', '3.6.0'
+  s.tvos.dependency 'TVVLCKit', '3.5.1'
 end
