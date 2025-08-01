@@ -433,7 +433,14 @@ static NSString *const playbackRate = @"rate";
 
 -(void)setVideoAspectRatio:(NSString *)ratio {
     NSLog(@"setVideoAspectRatio: %@", ratio);
+    
+    if (ratio == nil || [ratio isEqual:[NSNull null]]) {
+        ratio = @"fill";
+        NSLog(@"setVideoAspectRatio: ratio was nil, using default 'fill'");
+    }
+    
     _videoAspectRatio = ratio;
+    
     if ([ratio isEqualToString:@"original"]) {
         // ratio = @"DEFAULT";
         // default nece iz nekog razloga da radi
@@ -452,7 +459,6 @@ static NSString *const playbackRate = @"rate";
             ratio = [NSString stringWithFormat:@"%ld:%ld", (long)reducedWidth, (long)reducedHeight];
         }
 
-
     } else if ([ratio isEqualToString:@"fill"]) {
         CGFloat viewWidth = self.bounds.size.width;
         CGFloat viewHeight = self.bounds.size.height;
@@ -468,6 +474,7 @@ static NSString *const playbackRate = @"rate";
     
     char *char_content = [ratio cStringUsingEncoding:NSASCIIStringEncoding];
     [_player setVideoAspectRatio:char_content];
+    
     self.onAspectRatioChanged(@{
         // @"target": self.reactTag,
         @"ratio": ratio
