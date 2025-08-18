@@ -1,11 +1,11 @@
 apply plugin: 'com.android.library'
 android {
-    compileSdkVersion 31
-    buildToolsVersion '28.0.3'
+    compileSdkVersion 35
+    buildToolsVersion '35.0.0'
 
     defaultConfig {
-        minSdkVersion 21
-        targetSdkVersion 31
+        minSdkVersion 24
+        targetSdkVersion 35
         versionCode 1
         versionName "1.0"
         ndk {
@@ -25,13 +25,13 @@ repositories {
         url "https://mvnrepository.com/artifact/org.videolan.android"
     }
     google()
-    jcenter()
+    mavenCentral()
 }
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation "com.facebook.react:react-native:+"
     implementation 'androidx.legacy:legacy-support-v4:1.0.0'
-    implementation 'org.videolan.android:libvlc-all:3.6.0-eap12'
+    implementation 'org.videolan.android:libvlc-all:3.6.2'
     // implementation 'org.videolan.android:libvlc-all:4.0.0-eap15'
 }
