@@ -1,6 +1,6 @@
 {
   "name": "react-native-maxplayer-vlc",
-  "version": "1.0.100",
+  "version": "1.0.101",
   "description": "libvlc",
   "main": "index.js",
   "scripts": {
