@@ -1,34 +1,22 @@
 {
-  "name": "react-native-vlc-media-player",
-  "version": "1.0.51",
-  "description": "React native media player for video streaming and playing. Supports RTSP,RTMP and other protocols supported by VLC player",
+  "name": "react-native-maxplayer-vlc",
+  "version": "1.0.100",
+  "description": "libvlc",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
-    "vlc",
-    "player",
-    "android",
-    "ios",
-    "react-native",
-    "mp4",
-    "rtsp",
-    "media",
-    "video"
+    "vlc"
   ],
-  "author": "rmilinda@gmail.com",
-  "dependencies": {
-    "react-native-slider": "^0.11.0",
-    "react-native-vector-icons": "^9.2.0"
-  },
+  "author": "nemanja@egalactic.com",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/razorRun/react-native-vlc-media-player.git"
+    "url": "git+https://github.com/Nemanja02/react-native-maxplayer-vlc.git"
   },
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/razorRun/react-native-vlc-media-player/issues"
+    "url": "https://github.com/Nemanja02/react-native-maxplayer-vlc/issues"
   },
-  "homepage": "https://github.com/razorRun/react-native-vlc-media-player#readme"
+  "homepage": "https://github.com/Nemanja02/react-native-maxplayer-vlc#readme"
 }
