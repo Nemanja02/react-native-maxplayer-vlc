@@ -111,13 +111,18 @@ static NSString *const playbackRate = @"rate";
     NSString* uri    = [_source objectForKey:@"uri"];
     NSString* mediaType    = [_source objectForKey:@"mediaType"];
     NSURL* _uri    = [NSURL URLWithString:uri];
-    NSDictionary* initOptions = [_source objectForKey:@"initOptions"];
+    NSArray* initOptions = [_source objectForKey:@"initOptions"];
 
     if(mediaType){
         _mediaType = mediaType;
     }
 
-    _player = [[VLCMediaPlayer alloc] init];
+    // freetype-* i druge LibVLC opcije moraju pri init-u, ne addOption
+    if (initOptions != nil && [initOptions count] > 0) {
+        _player = [[VLCMediaPlayer alloc] initWithOptions:initOptions];
+    } else {
+        _player = [[VLCMediaPlayer alloc] init];
+    }
 	// [bavv edit end]
 
     self.frame = [UIScreen mainScreen].bounds; // Podesite frame na veličinu celog ekrana  // ovo možda nije neophodno
@@ -155,7 +160,7 @@ static NSString *const playbackRate = @"rate";
     NSString* mediaType    = [source objectForKey:@"mediaType"];
     BOOL    autoplay = [RCTConvert BOOL:[source objectForKey:@"autoplay"]];
     NSURL* _uri    = [NSURL URLWithString:uri];
-    NSDictionary* initOptions = [source objectForKey:@"initOptions"];
+    NSArray* initOptions = [source objectForKey:@"initOptions"];
 
 
     if(mediaType){
@@ -167,7 +172,12 @@ static NSString *const playbackRate = @"rate";
         _player = nil;
     }
 
-    _player = [[VLCMediaPlayer alloc] init];
+    // freetype-* i druge LibVLC opcije moraju pri init-u, ne addOption
+    if (initOptions != nil && [initOptions count] > 0) {
+        _player = [[VLCMediaPlayer alloc] initWithOptions:initOptions];
+    } else {
+        _player = [[VLCMediaPlayer alloc] init];
+    }
 
     // [bavv edit end]
 
