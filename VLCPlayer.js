@@ -25,6 +25,8 @@ export default class VLCPlayer extends Component {
     this._onOpen = this._onOpen.bind(this);
     this._onLoadStart = this._onLoadStart.bind(this);
     this._onAspectRatioChanged = this._onAspectRatioChanged.bind(this);
+    this._onReconnecting = this._onReconnecting.bind(this);
+    this._onReconnectFailed = this._onReconnectFailed.bind(this);
     this.changeVideoAspectRatio = this.changeVideoAspectRatio.bind(this);
     this.refreshAspectRatio = this.refreshAspectRatio.bind(this);
     this.subtitleTrack = this.subtitleTrack.bind(this);
@@ -73,6 +75,18 @@ export default class VLCPlayer extends Component {
   _onAspectRatioChanged(event) {
     if (this.props.aspectRatioChanged) {
       this.props.aspectRatioChanged(event.nativeEvent);
+    }
+  }
+
+  _onReconnecting(event) {
+    if (this.props.onReconnecting) {
+      this.props.onReconnecting(event.nativeEvent);
+    }
+  }
+
+  _onReconnectFailed(event) {
+    if (this.props.onReconnectFailed) {
+      this.props.onReconnectFailed(event.nativeEvent);
     }
   }
 
@@ -182,6 +196,8 @@ export default class VLCPlayer extends Component {
       onVideoStopped: this._onStopped,
       onVideoBuffering: this._onBuffering,
       onAspectRatioChanged: this._onAspectRatioChanged,
+      onVideoReconnecting: this._onReconnecting,
+      onVideoReconnectFailed: this._onReconnectFailed,
       progressUpdateInterval: 250,
     });
 
@@ -213,6 +229,8 @@ VLCPlayer.propTypes = {
 
   onVideoLoadStart: PropTypes.func,
   onVideoError: PropTypes.func,
+  onVideoReconnecting: PropTypes.func,
+  onVideoReconnectFailed: PropTypes.func,
   onVideoProgress: PropTypes.func,
   // oba pozivaju istu metodu, debil je ovaj koji je pravio ovaj modul nije dosledan
   onVideoEnded: PropTypes.func,
@@ -234,6 +252,8 @@ VLCPlayer.propTypes = {
   onStopped: PropTypes.func,
   onPlaying: PropTypes.func,
   onPaused: PropTypes.func,
+  onReconnecting: PropTypes.func,
+  onReconnectFailed: PropTypes.func,
 
   /* Required by react-native */
   scaleX: PropTypes.number,

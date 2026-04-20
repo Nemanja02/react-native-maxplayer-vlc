@@ -14,6 +14,8 @@
 @property (nonatomic, copy) RCTBubblingEventBlock onVideoOpen;
 @property (nonatomic, copy) RCTBubblingEventBlock onVideoLoadStart;
 @property (nonatomic, copy) RCTBubblingEventBlock onAspectRatioChanged;
+@property (nonatomic, copy) RCTBubblingEventBlock onVideoReconnecting;
+@property (nonatomic, copy) RCTBubblingEventBlock onVideoReconnectFailed;
 
 - (instancetype)initWithEventDispatcher:(RCTEventDispatcher *)eventDispatcher NS_DESIGNATED_INITIALIZER;
 - (void)setMuted:(BOOL)value;

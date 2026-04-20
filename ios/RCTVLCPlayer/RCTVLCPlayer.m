@@ -29,7 +29,25 @@ static NSString *const playbackRate = @"rate";
     NSString *_videoWidth;
     NSString *_videoHeight;
     NSString *_mediaType;
+
+    // Retry / reconnect state — mirrors cordova VLCPlayer.java
+    NSTimer *_reconnectTimer;
+    NSTimer *_stallTimer;
+    NSTimeInterval _lastTimeChangedMs;
+    NSInteger _reconnectAttempt;
+    BOOL _autoReconnect;
+    NSInteger _maxReconnectAttempts;
+    BOOL _isLiveStream;
+    // YES while setSource is invoked from the retry timer block. Lets setSource
+    // skip counter reset so exponential backoff accumulates across attempts.
+    BOOL _reloadingForRetry;
 }
+
+static const NSTimeInterval kReconnectInitialDelaySec = 2.0;
+static const NSTimeInterval kReconnectMaxDelaySec = 8.0; // cap at 8s per user preference
+static const NSInteger kDefaultMaxReconnects = 10;
+static const NSTimeInterval kStallTimeoutSec = 12.0;
+static const NSTimeInterval kStallCheckIntervalSec = 5.0;
 
 - (instancetype)initWithEventDispatcher:(RCTEventDispatcher *)eventDispatcher
 {
@@ -167,6 +185,30 @@ static NSString *const playbackRate = @"rate";
         _mediaType = mediaType;
     }
 
+    // Retry config — read each time (setSource is called on mount + source updates)
+    // isLive controls unlimited retries. Treat live + timeshift alike for backoff cap.
+    _isLiveStream = (_mediaType != nil &&
+                     ([_mediaType isEqualToString:@"live"] ||
+                      [_mediaType isEqualToString:@"timeshift"]));
+    // Default auto-reconnect ONLY for "live" — timeshift consumers typically have
+    // their own fallback URL logic and should opt-in explicitly.
+    BOOL defaultAutoReconnect = [_mediaType isEqualToString:@"live"];
+    id autoReconnectVal = [source objectForKey:@"autoReconnect"];
+    _autoReconnect = autoReconnectVal != nil
+        ? [RCTConvert BOOL:autoReconnectVal]
+        : defaultAutoReconnect;
+    id maxVal = [source objectForKey:@"maxReconnectAttempts"];
+    _maxReconnectAttempts = maxVal != nil ? [RCTConvert NSInteger:maxVal] : kDefaultMaxReconnects;
+
+    // External source change = fresh retry budget. Skip when called from retry timer.
+    if (!_reloadingForRetry) {
+        _reconnectAttempt = 0;
+    }
+
+    // Cancel any pending retry/stall work from previous source
+    [self cancelPendingReconnect];
+    [self stopStallDetection];
+
     if(_player){
         [_player pause];
         _player = nil;
@@ -219,6 +261,7 @@ static NSString *const playbackRate = @"rate";
 
 - (void)mediaPlayerTimeChanged:(NSNotification *)aNotification
 {
+    _lastTimeChangedMs = [[NSDate date] timeIntervalSince1970] * 1000.0;
     [self updateVideoProgress];
 }
 
@@ -278,6 +321,7 @@ static NSString *const playbackRate = @"rate";
             }
             case VLCMediaPlayerStateOpening: {
                 NSLog(@"VLCMediaPlayerStateOpening %i",1);
+                _lastTimeChangedMs = [[NSDate date] timeIntervalSince1970] * 1000.0;
                 self.onVideoOpen(@{
                     @"target": self.reactTag
                 });
@@ -286,6 +330,7 @@ static NSString *const playbackRate = @"rate";
             case VLCMediaPlayerStatePaused: {
                 _paused = YES;
                 NSLog(@"VLCMediaPlayerStatePaused %i",1);
+                [self stopStallDetection];
                 self.onVideoPaused(@{
                     @"target": self.reactTag
                 });
@@ -293,6 +338,7 @@ static NSString *const playbackRate = @"rate";
             }
             case VLCMediaPlayerStateStopped: {
                 NSLog(@"VLCMediaPlayerStateStopped %i",1);
+                [self stopStallDetection];
                 self.onVideoStopped(@{
                     @"target": self.reactTag
                 });
@@ -307,21 +353,30 @@ static NSString *const playbackRate = @"rate";
             case VLCMediaPlayerStatePlaying:
                 _paused = NO;
                 NSLog(@"VLCMediaPlayerStatePlaying %i",1);
+                // Successful playback — reset retry state, start stall detection
+                _reconnectAttempt = 0;
+                _lastTimeChangedMs = [[NSDate date] timeIntervalSince1970] * 1000.0;
+                if (_autoReconnect) {
+                    [self startStallDetection];
+                }
                 self.onVideoPlaying(@{
                                       @"target": self.reactTag,
                                       @"seekable": [NSNumber numberWithBool:[_player isSeekable]],
                                       @"duration":[NSNumber numberWithInt:[_player.media.length intValue]]
                                       });
                 break;
-            case VLCMediaPlayerStateEnded:
+            case VLCMediaPlayerStateEnded: {
                 NSLog(@"VLCMediaPlayerStateEnded %i",1);
                 int currentTime   = [[_player time] intValue];
                 int remainingTime = [[_player remainingTime] intValue];
                 int duration      = [_player.media.length intValue];
 
-                // if mediaType is live, replay stream
-                if ([_mediaType isEqualToString:@"live"]) {
-                    [self replay];
+                if (_autoReconnect && _isLiveStream) {
+                    // Live stream ended unexpectedly — full reconnect via retry path
+                    [self scheduleReconnectWithReason:@"EndReached on live"];
+                } else {
+                    [self stopStallDetection];
+                    [self cancelPendingReconnect];
                 }
 
                 self.onVideoEnded(@{
@@ -332,12 +387,18 @@ static NSString *const playbackRate = @"rate";
                                     @"position":[NSNumber numberWithFloat:_player.position]
                                     });
                 break;
+            }
             case VLCMediaPlayerStateError:
                 NSLog(@"VLCMediaPlayerStateError %i",1);
                 self.onVideoError(@{
                                     @"target": self.reactTag
                                     });
-                [self _release];
+                if (_autoReconnect) {
+                    // Do NOT call _release here — scheduleReconnect will recreate the player
+                    [self scheduleReconnectWithReason:@"EncounteredError"];
+                } else {
+                    [self _release];
+                }
                 break;
             default:
                 break;
@@ -500,6 +561,10 @@ static NSString *const playbackRate = @"rate";
 
 - (void)_release
 {
+    // Cancel retry/stall work before destroying the player to prevent
+    // timers from firing with a nil _player or racing teardown
+    [self cancelPendingReconnect];
+    [self stopStallDetection];
     if(_player){
         [_player pause];
         [_player stop];
@@ -509,6 +574,103 @@ static NSString *const playbackRate = @"rate";
     }
 }
 
+// ==================== Retry / reconnect ====================
+
+- (void)startStallDetection
+{
+    if (_stallTimer != nil) return; // already running
+    __weak RCTVLCPlayer *weakSelf = self;
+    _stallTimer = [NSTimer scheduledTimerWithTimeInterval:kStallCheckIntervalSec
+                                                  repeats:YES
+                                                    block:^(NSTimer * _Nonnull timer) {
+        RCTVLCPlayer *strongSelf = weakSelf;
+        if (strongSelf == nil || strongSelf->_player == nil) {
+            [timer invalidate];
+            return;
+        }
+        NSTimeInterval nowMs = [[NSDate date] timeIntervalSince1970] * 1000.0;
+        NSTimeInterval sinceLastMs = nowMs - strongSelf->_lastTimeChangedMs;
+        if (strongSelf->_lastTimeChangedMs > 0 && sinceLastMs > kStallTimeoutSec * 1000.0) {
+            NSLog(@"Stall detected: no TimeChanged for %.0fms", sinceLastMs);
+            [strongSelf stopStallDetection];
+            [strongSelf scheduleReconnectWithReason:@"stall"];
+        }
+    }];
+}
+
+- (void)stopStallDetection
+{
+    if (_stallTimer != nil) {
+        [_stallTimer invalidate];
+        _stallTimer = nil;
+    }
+}
+
+- (void)cancelPendingReconnect
+{
+    if (_reconnectTimer != nil) {
+        [_reconnectTimer invalidate];
+        _reconnectTimer = nil;
+    }
+}
+
+- (void)scheduleReconnectWithReason:(NSString *)reason
+{
+    if (!_autoReconnect || _source == nil) return;
+    // Cancel any pending work so we don't stack up reconnects
+    [self cancelPendingReconnect];
+    [self stopStallDetection];
+
+    // Live = unlimited. VOD = _maxReconnectAttempts.
+    if (!_isLiveStream && _reconnectAttempt >= _maxReconnectAttempts) {
+        NSLog(@"Max reconnect attempts (%ld) reached, giving up", (long)_maxReconnectAttempts);
+        if (self.onVideoReconnectFailed) {
+            self.onVideoReconnectFailed(@{
+                @"target": self.reactTag ?: @0,
+                @"attempts": @(_reconnectAttempt)
+            });
+        }
+        return;
+    }
+
+    _reconnectAttempt++;
+    // Exponential backoff: 2s, 4s, 8s, 8s, 8s ... (capped at kReconnectMaxDelaySec)
+    NSInteger shiftBy = MIN(_reconnectAttempt - 1, 4);
+    NSTimeInterval delaySec = MIN(kReconnectInitialDelaySec * (1 << shiftBy), kReconnectMaxDelaySec);
+    NSLog(@"Reconnect attempt %ld in %.1fs (reason=%@, live=%d)",
+          (long)_reconnectAttempt, delaySec, reason, _isLiveStream);
+
+    if (self.onVideoReconnecting) {
+        self.onVideoReconnecting(@{
+            @"target": self.reactTag ?: @0,
+            @"attempt": @(_reconnectAttempt),
+            @"maxAttempts": @(_isLiveStream ? -1 : _maxReconnectAttempts),
+            @"delayMs": @((NSInteger)(delaySec * 1000)),
+            @"reason": reason ?: @""
+        });
+    }
+
+    __weak RCTVLCPlayer *weakSelf = self;
+    _reconnectTimer = [NSTimer scheduledTimerWithTimeInterval:delaySec
+                                                      repeats:NO
+                                                        block:^(NSTimer * _Nonnull timer) {
+        RCTVLCPlayer *strongSelf = weakSelf;
+        if (strongSelf == nil || strongSelf->_source == nil) return;
+        strongSelf->_reconnectTimer = nil;
+        strongSelf->_reloadingForRetry = YES;
+        @try {
+            // Full recreate via setSource — tears down _player and rebuilds
+            // with same source dict, including freetype opts and autoplay
+            [strongSelf setSource:strongSelf->_source];
+        } @catch (NSException *e) {
+            NSLog(@"Reconnect error: %@", e);
+            [strongSelf scheduleReconnectWithReason:@"reconnect-exception"];
+        } @finally {
+            strongSelf->_reloadingForRetry = NO;
+        }
+    }];
+}
+
 
 #pragma mark - Lifecycle
 - (void)removeFromSuperview
@@ -516,6 +678,15 @@ static NSString *const playbackRate = @"rate";
     NSLog(@"removeFromSuperview");
     [self _release];
     [super removeFromSuperview];
+}
+
+- (void)dealloc
+{
+    // Defensive: if ARC deallocates without removeFromSuperview (unusual but possible
+    // in some lifecycle races), ensure retry/stall NSTimers aren't left on the runloop
+    // holding a block with a now-nil weakSelf.
+    if (_reconnectTimer != nil) { [_reconnectTimer invalidate]; _reconnectTimer = nil; }
+    if (_stallTimer != nil) { [_stallTimer invalidate]; _stallTimer = nil; }
 }
 
 

@@ -6,6 +6,7 @@ import android.graphics.SurfaceTexture;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Handler;
+import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Surface;
@@ -64,6 +65,24 @@ class ReactVlcPlayerView extends TextureView implements
     private float mProgressUpdateInterval = 150;
     private Handler mProgressUpdateHandler = new Handler();
     private Runnable mProgressUpdateRunnable = null;
+
+    // Retry / reconnect state — mirrors cordova VLCPlayer.java
+    private static final int RECONNECT_INITIAL_DELAY_MS = 2000;
+    private static final int RECONNECT_MAX_DELAY_MS = 8000; // cap at 8s per user preference
+    private static final int DEFAULT_MAX_RECONNECTS = 10;
+    private static final int STALL_TIMEOUT_MS = 12000;
+    private static final int STALL_CHECK_INTERVAL_MS = 5000;
+
+    private final Handler reconnectHandler = new Handler(Looper.getMainLooper());
+    private final Handler stallHandler = new Handler(Looper.getMainLooper());
+    private Runnable stallCheckRunnable;
+    private Runnable pendingReconnectRunnable;
+    private long lastTimeChangedMs = 0;
+    private int reconnectAttempt = 0;
+    private boolean autoReconnect = false;
+    private int maxReconnectAttempts = DEFAULT_MAX_RECONNECTS;
+    private boolean isLiveStream = false;
+    private String mediaType = null;
 
     private final ThemedReactContext themedReactContext;
     private final AudioManager audioManager;
@@ -257,35 +276,60 @@ class ReactVlcPlayerView extends TextureView implements
                 case MediaPlayer.Event.EndReached:
                     map.putString("type", "Ended");
                     eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_END);
+                    if (autoReconnect && isLiveStream) {
+                        // Live stream ended unexpectedly — provider dropped or playlist exhausted
+                        scheduleReconnect("EndReached on live");
+                    } else {
+                        // VOD finished naturally — stop stall detection so it doesn't
+                        // misinterpret "no more TimeChanged" as a stall
+                        stopStallDetection();
+                        cancelPendingReconnect();
+                    }
                     break;
                 case MediaPlayer.Event.Playing:
                     map.putString("type", "Playing");
                     eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_ON_IS_PLAYING);
+                    // Successful playback — reset reconnect counter, start stall detection
+                    reconnectAttempt = 0;
+                    lastTimeChangedMs = System.currentTimeMillis();
+                    if (autoReconnect) startStallDetection();
                     break;
                 case MediaPlayer.Event.Opening:
                     map.putString("type", "Opening");
+                    lastTimeChangedMs = System.currentTimeMillis();
                     // eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_ON_OPEN);
                     break;
                 case MediaPlayer.Event.Paused:
                     map.putString("type", "Paused");
                     eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_ON_PAUSED);
+                    stopStallDetection();
                     break;
                 case MediaPlayer.Event.Buffering:
-                    map.putDouble("bufferRate", event.getBuffering());
+                    float bufferPercent = event.getBuffering();
+                    map.putDouble("bufferRate", bufferPercent);
                     map.putString("type", "Buffering");
                     eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_ON_VIDEO_BUFFERING);
+                    if (bufferPercent >= 100.0f) {
+                        // Buffer full after seek — VLC may not re-emit Playing, so
+                        // reset stall timer here to avoid false positive
+                        lastTimeChangedMs = System.currentTimeMillis();
+                    }
                     break;
                 case MediaPlayer.Event.Stopped:
                     map.putString("type", "Stopped");
                     eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_ON_VIDEO_STOPPED);
+                    stopStallDetection();
                     break;
                 case MediaPlayer.Event.EncounteredError:
                     map.putString("type", "Error");
                     eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_ON_ERROR);
-
+                    if (autoReconnect) {
+                        scheduleReconnect("EncounteredError");
+                    }
                     break;
                 case MediaPlayer.Event.TimeChanged:
                     map.putString("type", "TimeChanged");
+                    lastTimeChangedMs = System.currentTimeMillis();
                     eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_SEEK);
                     break;
                 default:
@@ -361,6 +405,24 @@ class ReactVlcPlayerView extends TextureView implements
             String userAgent = srcMap.hasKey("userAgent") ? srcMap.getString("userAgent") : null;
             boolean hwDecoderEnabled = srcMap.hasKey("hwDecoderEnabled") ? srcMap.getBoolean("hwDecoderEnabled") : false;
             boolean hwDecoderForced = srcMap.hasKey("hwDecoderForced") ? srcMap.getBoolean("hwDecoderForced") : false;
+
+            // Retry config — read from source dict each time (setSrc may be called on remount).
+            // reconnectAttempt is NOT reset here because createPlayer is also invoked *from*
+            // the reconnect runnable itself; resetting would break exponential backoff.
+            // It's reset on successful Playing event (see mPlayerListener).
+            this.mediaType = srcMap.hasKey("mediaType") ? srcMap.getString("mediaType") : null;
+            // isLive controls unlimited retries. Treat live + timeshift alike for backoff cap.
+            this.isLiveStream = mediaType != null
+                && ("live".equalsIgnoreCase(mediaType) || "timeshift".equalsIgnoreCase(mediaType));
+            // Default auto-reconnect ONLY for "live" — timeshift consumers typically have
+            // their own fallback URL logic and should opt-in explicitly.
+            boolean defaultAutoReconnect = "live".equalsIgnoreCase(mediaType);
+            this.autoReconnect = srcMap.hasKey("autoReconnect")
+                ? srcMap.getBoolean("autoReconnect")
+                : defaultAutoReconnect;
+            this.maxReconnectAttempts = srcMap.hasKey("maxReconnectAttempts")
+                ? srcMap.getInt("maxReconnectAttempts")
+                : DEFAULT_MAX_RECONNECTS;
 
             if (initOptions != null) {
                 ArrayList options = initOptions.toArrayList();
@@ -444,8 +506,14 @@ class ReactVlcPlayerView extends TextureView implements
     }
 
     private void releasePlayer() {
+        // Always cancel retry/stall timers on release — even if libvlc is null,
+        // there may be a pending reconnect scheduled before first createPlayer
+        stopStallDetection();
+        cancelPendingReconnect();
         if (libvlc == null)
             return;
+        // Detach listener before stop to avoid stale events racing reconnect
+        try { mMediaPlayer.setEventListener(null); } catch (Exception ignored) {}
         mMediaPlayer.stop();
         final IVLCVout vout = mMediaPlayer.getVLCVout();
         vout.removeCallback(callback);
@@ -458,6 +526,84 @@ class ReactVlcPlayerView extends TextureView implements
         if(mProgressUpdateRunnable!=null){
             mProgressUpdateHandler.removeCallbacks(mProgressUpdateRunnable);
         }
+    }
+
+    // ==================== Retry / reconnect ====================
+
+    private void startStallDetection() {
+        if (stallCheckRunnable != null) return; // already running
+        stallCheckRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (mMediaPlayer == null) return;
+                long sinceLastUpdate = System.currentTimeMillis() - lastTimeChangedMs;
+                if (lastTimeChangedMs > 0 && sinceLastUpdate > STALL_TIMEOUT_MS) {
+                    Log.w(TAG, "Stall detected: no TimeChanged for " + sinceLastUpdate + "ms");
+                    stopStallDetection();
+                    scheduleReconnect("stall");
+                    return;
+                }
+                stallHandler.postDelayed(this, STALL_CHECK_INTERVAL_MS);
+            }
+        };
+        stallHandler.postDelayed(stallCheckRunnable, STALL_CHECK_INTERVAL_MS);
+    }
+
+    private void stopStallDetection() {
+        stallHandler.removeCallbacksAndMessages(null);
+        stallCheckRunnable = null;
+    }
+
+    private void cancelPendingReconnect() {
+        reconnectHandler.removeCallbacksAndMessages(null);
+        pendingReconnectRunnable = null;
+    }
+
+    private void scheduleReconnect(String reason) {
+        if (!autoReconnect || srcMap == null) return;
+        // Cancel any pending work so we don't stack up reconnects
+        cancelPendingReconnect();
+        stopStallDetection();
+
+        // Live = unlimited. VOD = maxReconnectAttempts.
+        if (!isLiveStream && reconnectAttempt >= maxReconnectAttempts) {
+            Log.e(TAG, "Max reconnect attempts (" + maxReconnectAttempts + ") reached, giving up");
+            WritableMap failed = Arguments.createMap();
+            failed.putInt("attempts", reconnectAttempt);
+            eventEmitter.sendEvent(failed, VideoEventEmitter.EVENT_ON_RECONNECT_FAILED);
+            return;
+        }
+
+        reconnectAttempt++;
+        // Exponential backoff: 2s, 4s, 8s, 8s, 8s ... (capped at RECONNECT_MAX_DELAY_MS)
+        int shiftBy = Math.min(reconnectAttempt - 1, 4);
+        int delay = Math.min(RECONNECT_INITIAL_DELAY_MS * (1 << shiftBy), RECONNECT_MAX_DELAY_MS);
+        Log.w(TAG, "Reconnect attempt " + reconnectAttempt + " in " + delay + "ms (reason=" + reason
+                + ", live=" + isLiveStream + ")");
+
+        WritableMap payload = Arguments.createMap();
+        payload.putInt("attempt", reconnectAttempt);
+        payload.putInt("maxAttempts", isLiveStream ? -1 : maxReconnectAttempts);
+        payload.putInt("delayMs", delay);
+        payload.putString("reason", reason);
+        eventEmitter.sendEvent(payload, VideoEventEmitter.EVENT_ON_RECONNECTING);
+
+        pendingReconnectRunnable = new Runnable() {
+            @Override
+            public void run() {
+                pendingReconnectRunnable = null;
+                if (srcMap == null) return;
+                try {
+                    // Recreate player with same source to force fresh connection
+                    createPlayer(true, false);
+                } catch (Exception e) {
+                    Log.e(TAG, "Reconnect error", e);
+                    // If createPlayer threw, schedule next attempt
+                    scheduleReconnect("reconnect-exception");
+                }
+            }
+        };
+        reconnectHandler.postDelayed(pendingReconnectRunnable, delay);
     }
 
     /**
@@ -521,6 +667,9 @@ class ReactVlcPlayerView extends TextureView implements
 
     public void setSrc(ReadableMap src) {
         this.srcMap = src;
+        // New source = fresh retry budget (exponential backoff doesn't carry over
+        // from a previous URL's failures)
+        this.reconnectAttempt = 0;
         createPlayer(true, false);
 
     }

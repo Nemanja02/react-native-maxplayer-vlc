@@ -36,6 +36,8 @@ RCT_EXPORT_VIEW_PROPERTY(onVideoError, RCTDirectEventBlock);
 RCT_EXPORT_VIEW_PROPERTY(onVideoOpen, RCTDirectEventBlock);
 RCT_EXPORT_VIEW_PROPERTY(onVideoLoadStart, RCTDirectEventBlock);
 RCT_EXPORT_VIEW_PROPERTY(onAspectRatioChanged, RCTDirectEventBlock);
+RCT_EXPORT_VIEW_PROPERTY(onVideoReconnecting, RCTDirectEventBlock);
+RCT_EXPORT_VIEW_PROPERTY(onVideoReconnectFailed, RCTDirectEventBlock);
 
 - (dispatch_queue_t)methodQueue
 {
