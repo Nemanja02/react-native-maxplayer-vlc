@@ -312,10 +312,18 @@ static const NSTimeInterval kStallCheckIntervalSec = 5.0;
 
                     // NSLog(@"_videoWidth: %@", _videoWidth);
                     // NSLog(@"_videoHeight: %@", _videoHeight);
+                    // Expose VLC's currently-selected subtitle and audio track IDs so
+                    // the JS side can mirror what the player is actually rendering
+                    // (VLC may auto-select a default track based on stream metadata).
+                    NSInteger currentSubtitle = [_player currentVideoSubTitleIndex];
+                    NSInteger currentAudio = [_player currentAudioTrackIndex];
+
                     self.onVideoOpen(@{
                                          @"target": self.reactTag,
                                          @"subtitles": subtitles,
-                                         @"audio_tracks": audio
+                                         @"audio_tracks": audio,
+                                         @"currentSubtitle": @(currentSubtitle),
+                                         @"currentAudio": @(currentAudio)
                                          });
                 break;
             }

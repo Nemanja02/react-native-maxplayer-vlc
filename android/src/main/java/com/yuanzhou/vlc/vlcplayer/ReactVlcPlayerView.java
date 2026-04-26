@@ -881,7 +881,21 @@ class ReactVlcPlayerView extends TextureView implements
                     } catch (Exception e) {
                         map.putDouble("duration", -1);
                     }
-                   
+
+                    // Expose VLC's currently-selected subtitle and audio track IDs so
+                    // the JS side can mirror what the player is actually rendering
+                    // (VLC may auto-select a default track based on stream metadata).
+                    try {
+                        map.putInt("currentSubtitle", mMediaPlayer.getSpuTrack());
+                    } catch (Exception e) {
+                        map.putInt("currentSubtitle", -1);
+                    }
+                    try {
+                        map.putInt("currentAudio", mMediaPlayer.getAudioTrack());
+                    } catch (Exception e) {
+                        map.putInt("currentAudio", -1);
+                    }
+
                     Log.e(tag, "Media.Event.ParsedChanged  =" + event.getMetaId());
                     eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_ON_OPEN);
                     break;
