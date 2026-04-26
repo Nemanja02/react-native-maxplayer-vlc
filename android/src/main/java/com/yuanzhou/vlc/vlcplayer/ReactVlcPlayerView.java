@@ -288,6 +288,21 @@ class ReactVlcPlayerView extends TextureView implements
                     break;
                 case MediaPlayer.Event.Playing:
                     map.putString("type", "Playing");
+                    // Snapshot of currently selected SPU/audio track at the moment
+                    // playback begins. By this time VLC has applied its default
+                    // selection (locale-based or stream-flagged), so this is a
+                    // reliable signal for the JS side to mirror in its UI state.
+                    try {
+                        map.putInt("currentSubtitle", mMediaPlayer.getSpuTrack());
+                    } catch (Exception e) {
+                        map.putInt("currentSubtitle", -1);
+                    }
+                    try {
+                        map.putInt("currentAudio", mMediaPlayer.getAudioTrack());
+                    } catch (Exception e) {
+                        map.putInt("currentAudio", -1);
+                    }
+                    map.putString("source", "playing");
                     eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_ON_IS_PLAYING);
                     // Successful playback — reset reconnect counter, start stall detection
                     reconnectAttempt = 0;
@@ -331,6 +346,25 @@ class ReactVlcPlayerView extends TextureView implements
                     map.putString("type", "TimeChanged");
                     lastTimeChangedMs = System.currentTimeMillis();
                     eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_SEEK);
+                    break;
+                case MediaPlayer.Event.ESSelected:
+                    // Fires whenever an elementary stream gets selected (auto by libVLC
+                    // on default-pick, or manually). Emits a fresh snapshot of current
+                    // SPU/audio so JS can stay in sync. Wrapped defensively in case the
+                    // libVLC build doesn't expose track getters at this point.
+                    map.putString("type", "ESSelected");
+                    try {
+                        map.putInt("currentSubtitle", mMediaPlayer.getSpuTrack());
+                    } catch (Exception e) {
+                        map.putInt("currentSubtitle", -1);
+                    }
+                    try {
+                        map.putInt("currentAudio", mMediaPlayer.getAudioTrack());
+                    } catch (Exception e) {
+                        map.putInt("currentAudio", -1);
+                    }
+                    map.putString("source", "esSelected");
+                    eventEmitter.sendEvent(map, VideoEventEmitter.EVENT_ON_IS_PLAYING);
                     break;
                 default:
                     map.putString("type", event.type + "");

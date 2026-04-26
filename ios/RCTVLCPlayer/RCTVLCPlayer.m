@@ -367,10 +367,17 @@ static const NSTimeInterval kStallCheckIntervalSec = 5.0;
                 if (_autoReconnect) {
                     [self startStallDetection];
                 }
+                // Snapshot of currently selected SPU/audio track at the moment playback
+                // begins. By this time VLC has applied its default selection (locale
+                // or stream-flagged), so this is a reliable signal for the JS side
+                // to mirror in its UI state.
                 self.onVideoPlaying(@{
                                       @"target": self.reactTag,
                                       @"seekable": [NSNumber numberWithBool:[_player isSeekable]],
-                                      @"duration":[NSNumber numberWithInt:[_player.media.length intValue]]
+                                      @"duration":[NSNumber numberWithInt:[_player.media.length intValue]],
+                                      @"currentSubtitle": @([_player currentVideoSubTitleIndex]),
+                                      @"currentAudio": @([_player currentAudioTrackIndex]),
+                                      @"source": @"playing"
                                       });
                 break;
             case VLCMediaPlayerStateEnded: {
