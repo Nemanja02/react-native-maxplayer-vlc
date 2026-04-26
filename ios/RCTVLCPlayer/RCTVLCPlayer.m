@@ -163,9 +163,11 @@ static const NSTimeInterval kStallCheckIntervalSec = 5.0;
     _player.media = media;
     [[AVAudioSession sharedInstance] setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
     NSLog(@"autoplay: %i",autoplay);
-    self.onVideoLoadStart(@{
-                            @"target": self.reactTag
-                            });
+    if (self.onVideoLoadStart) {
+        self.onVideoLoadStart(@{
+                                @"target": self.reactTag
+                                });
+    }
 }
 
 -(void)setSource:(NSDictionary *)source
@@ -247,9 +249,11 @@ static const NSTimeInterval kStallCheckIntervalSec = 5.0;
     _player.media = media;
     [[AVAudioSession sharedInstance] setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
 
-    self.onVideoLoadStart(@{
-                           @"target": self.reactTag
-                           });
+    if (self.onVideoLoadStart) {
+        self.onVideoLoadStart(@{
+                               @"target": self.reactTag
+                               });
+    }
 //    if(autoplay)
         [self play];
 
@@ -318,45 +322,55 @@ static const NSTimeInterval kStallCheckIntervalSec = 5.0;
                     NSInteger currentSubtitle = [_player currentVideoSubTitleIndex];
                     NSInteger currentAudio = [_player currentAudioTrackIndex];
 
-                    self.onVideoOpen(@{
-                                         @"target": self.reactTag,
-                                         @"subtitles": subtitles,
-                                         @"audio_tracks": audio,
-                                         @"currentSubtitle": @(currentSubtitle),
-                                         @"currentAudio": @(currentAudio)
-                                         });
+                    if (self.onVideoOpen) {
+                        self.onVideoOpen(@{
+                                             @"target": self.reactTag,
+                                             @"subtitles": subtitles,
+                                             @"audio_tracks": audio,
+                                             @"currentSubtitle": @(currentSubtitle),
+                                             @"currentAudio": @(currentAudio)
+                                             });
+                    }
                 break;
             }
             case VLCMediaPlayerStateOpening: {
                 NSLog(@"VLCMediaPlayerStateOpening %i",1);
                 _lastTimeChangedMs = [[NSDate date] timeIntervalSince1970] * 1000.0;
-                self.onVideoOpen(@{
-                    @"target": self.reactTag
-                });
+                if (self.onVideoOpen) {
+                    self.onVideoOpen(@{
+                        @"target": self.reactTag
+                    });
+                }
                 break;
             }
             case VLCMediaPlayerStatePaused: {
                 _paused = YES;
                 NSLog(@"VLCMediaPlayerStatePaused %i",1);
                 [self stopStallDetection];
-                self.onVideoPaused(@{
-                    @"target": self.reactTag
-                });
+                if (self.onVideoPaused) {
+                    self.onVideoPaused(@{
+                        @"target": self.reactTag
+                    });
+                }
                 break;
             }
             case VLCMediaPlayerStateStopped: {
                 NSLog(@"VLCMediaPlayerStateStopped %i",1);
                 [self stopStallDetection];
-                self.onVideoStopped(@{
-                    @"target": self.reactTag
-                });
+                if (self.onVideoStopped) {
+                    self.onVideoStopped(@{
+                        @"target": self.reactTag
+                    });
+                }
                 break;
             }
             case VLCMediaPlayerStateBuffering:
                 // NSLog(@"VLCMediaPlayerStateBuffering %i",1);
-                self.onVideoBuffering(@{
-                                        @"target": self.reactTag
-                                        });
+                if (self.onVideoBuffering) {
+                    self.onVideoBuffering(@{
+                                            @"target": self.reactTag
+                                            });
+                }
                 break;
             case VLCMediaPlayerStatePlaying:
                 _paused = NO;
@@ -371,14 +385,16 @@ static const NSTimeInterval kStallCheckIntervalSec = 5.0;
                 // begins. By this time VLC has applied its default selection (locale
                 // or stream-flagged), so this is a reliable signal for the JS side
                 // to mirror in its UI state.
-                self.onVideoPlaying(@{
-                                      @"target": self.reactTag,
-                                      @"seekable": [NSNumber numberWithBool:[_player isSeekable]],
-                                      @"duration":[NSNumber numberWithInt:[_player.media.length intValue]],
-                                      @"currentSubtitle": @([_player currentVideoSubTitleIndex]),
-                                      @"currentAudio": @([_player currentAudioTrackIndex]),
-                                      @"source": @"playing"
-                                      });
+                if (self.onVideoPlaying) {
+                    self.onVideoPlaying(@{
+                                          @"target": self.reactTag,
+                                          @"seekable": [NSNumber numberWithBool:[_player isSeekable]],
+                                          @"duration":[NSNumber numberWithInt:[_player.media.length intValue]],
+                                          @"currentSubtitle": @([_player currentVideoSubTitleIndex]),
+                                          @"currentAudio": @([_player currentAudioTrackIndex]),
+                                          @"source": @"playing"
+                                          });
+                }
                 break;
             case VLCMediaPlayerStateEnded: {
                 NSLog(@"VLCMediaPlayerStateEnded %i",1);
@@ -394,20 +410,24 @@ static const NSTimeInterval kStallCheckIntervalSec = 5.0;
                     [self cancelPendingReconnect];
                 }
 
-                self.onVideoEnded(@{
-                                    @"target": self.reactTag,
-                                    @"currentTime": [NSNumber numberWithInt:currentTime],
-                                    @"remainingTime": [NSNumber numberWithInt:remainingTime],
-                                    @"duration":[NSNumber numberWithInt:duration],
-                                    @"position":[NSNumber numberWithFloat:_player.position]
-                                    });
+                if (self.onVideoEnded) {
+                    self.onVideoEnded(@{
+                                        @"target": self.reactTag,
+                                        @"currentTime": [NSNumber numberWithInt:currentTime],
+                                        @"remainingTime": [NSNumber numberWithInt:remainingTime],
+                                        @"duration":[NSNumber numberWithInt:duration],
+                                        @"position":[NSNumber numberWithFloat:_player.position]
+                                        });
+                }
                 break;
             }
             case VLCMediaPlayerStateError:
                 NSLog(@"VLCMediaPlayerStateError %i",1);
-                self.onVideoError(@{
-                                    @"target": self.reactTag
-                                    });
+                if (self.onVideoError) {
+                    self.onVideoError(@{
+                                        @"target": self.reactTag
+                                        });
+                }
                 if (_autoReconnect) {
                     // Do NOT call _release here — scheduleReconnect will recreate the player
                     [self scheduleReconnectWithReason:@"EncounteredError"];
@@ -429,23 +449,26 @@ static const NSTimeInterval kStallCheckIntervalSec = 5.0;
         int duration      = [_player.media.length intValue];
 
         if( currentTime >= 0 && currentTime < duration) {
-            self.onVideoProgress(@{
-                                   @"target": self.reactTag,
-                                   @"currentTime": [NSNumber numberWithInt:currentTime],
-                                   @"remainingTime": [NSNumber numberWithInt:remainingTime],
-                                   @"duration":[NSNumber numberWithInt:duration],
-                                   @"position":[NSNumber numberWithFloat:_player.position]
-                                   });
+            if (self.onVideoProgress) {
+                self.onVideoProgress(@{
+                                       @"target": self.reactTag,
+                                       @"currentTime": [NSNumber numberWithInt:currentTime],
+                                       @"remainingTime": [NSNumber numberWithInt:remainingTime],
+                                       @"duration":[NSNumber numberWithInt:duration],
+                                       @"position":[NSNumber numberWithFloat:_player.position]
+                                       });
+            }
         } else if (_mediaType && [_mediaType isEqualToString:@"live"] || [_mediaType isEqualToString:@"timeshift"]) {
-                
-            self.onVideoProgress(@{
-                    @"target": self.reactTag,
-                    @"mediaType": _mediaType,
-                    @"currentTime": [NSNumber numberWithInt:currentTime],
-                    @"remainingTime": [NSNumber numberWithInt:remainingTime],
-                    @"duration":[NSNumber numberWithInt:duration],
-                    @"position":[NSNumber numberWithFloat:_player.position]
-            });
+            if (self.onVideoProgress) {
+                self.onVideoProgress(@{
+                        @"target": self.reactTag,
+                        @"mediaType": _mediaType,
+                        @"currentTime": [NSNumber numberWithInt:currentTime],
+                        @"remainingTime": [NSNumber numberWithInt:remainingTime],
+                        @"duration":[NSNumber numberWithInt:duration],
+                        @"position":[NSNumber numberWithFloat:_player.position]
+                });
+            }
         }
     }
 }
@@ -561,10 +584,12 @@ static const NSTimeInterval kStallCheckIntervalSec = 5.0;
     char *char_content = [ratio cStringUsingEncoding:NSASCIIStringEncoding];
     [_player setVideoAspectRatio:char_content];
     
-    self.onAspectRatioChanged(@{
-        // @"target": self.reactTag,
-        @"ratio": ratio
-    });
+    if (self.onAspectRatioChanged) {
+        self.onAspectRatioChanged(@{
+            // @"target": self.reactTag,
+            @"ratio": ratio
+        });
+    }
 }
 
 - (void)setMuted:(BOOL)value
