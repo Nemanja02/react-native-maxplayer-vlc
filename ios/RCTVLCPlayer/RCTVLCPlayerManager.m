@@ -59,5 +59,10 @@ RCT_CUSTOM_VIEW_PROPERTY(muted, BOOL, RCTVLCPlayer)
     BOOL isMuted = [RCTConvert BOOL:json];
     [view setMuted:isMuted];
 };
+RCT_CUSTOM_VIEW_PROPERTY(playInBackground, BOOL, RCTVLCPlayer)
+{
+    BOOL value = [RCTConvert BOOL:json];
+    [view setPlayInBackground:value];
+};
 
 @end

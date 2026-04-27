@@ -35,6 +35,7 @@ public class ReactVlcPlayerViewManager extends SimpleViewManager<ReactVlcPlayerV
     private static final String PROP_PROGRESS_UPDATE_INTERVAL = "progressUpdateInterval";
     private static final String PROP_SUBTITLE_TRACK = "subtitleTrack";
     private static final String PROP_AUDIO_TRACK = "audioTrack";
+    private static final String PROP_PLAY_IN_BACKGROUND = "playInBackground";
 
 
     @Override
@@ -122,6 +123,11 @@ public class ReactVlcPlayerViewManager extends SimpleViewManager<ReactVlcPlayerV
     @ReactProp(name = PROP_AUDIO_TRACK)
     public void setAudioTrack(final ReactVlcPlayerView videoView, final int track) {
         videoView.setAudioTrack(track);
+    }
+
+    @ReactProp(name = PROP_PLAY_IN_BACKGROUND, defaultBoolean = false)
+    public void setPlayInBackground(final ReactVlcPlayerView videoView, final boolean value) {
+        videoView.setPlayInBackground(value);
     }
 
     @ReactProp(name = PROP_RESUME, defaultBoolean = true)

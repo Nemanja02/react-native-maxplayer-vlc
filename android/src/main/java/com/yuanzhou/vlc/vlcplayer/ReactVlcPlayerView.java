@@ -83,6 +83,10 @@ class ReactVlcPlayerView extends TextureView implements
     private int maxReconnectAttempts = DEFAULT_MAX_RECONNECTS;
     private boolean isLiveStream = false;
     private String mediaType = null;
+    // When true, do not pause the player when the host activity is backgrounded
+    // (used for radio streams). Audio keeps playing while the activity is in
+    // STOP state, which works as long as the OS does not reclaim the process.
+    private boolean playInBackground = false;
 
     private final ThemedReactContext themedReactContext;
     private final AudioManager audioManager;
@@ -140,6 +144,10 @@ class ReactVlcPlayerView extends TextureView implements
 
     @Override
     public void onHostPause() {
+        if (playInBackground) {
+            // Keep audio running while app is backgrounded (radio streams).
+            return;
+        }
         if (!isPaused && mMediaPlayer != null) {
             isPaused = true;
             isHostPaused = true;
@@ -150,6 +158,10 @@ class ReactVlcPlayerView extends TextureView implements
             eventEmitter.onVideoStateChange(map);
         }
         // Log.i("onHostPause", "---------onHostPause------------>");
+    }
+
+    public void setPlayInBackground(boolean value) {
+        this.playInBackground = value;
     }
 
 

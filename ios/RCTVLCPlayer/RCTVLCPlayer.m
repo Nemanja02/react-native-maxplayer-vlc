@@ -41,6 +41,10 @@ static NSString *const playbackRate = @"rate";
     // YES while setSource is invoked from the retry timer block. Lets setSource
     // skip counter reset so exponential backoff accumulates across attempts.
     BOOL _reloadingForRetry;
+    // When YES, do not auto-pause on applicationWillResignActive and configure
+    // AVAudioSession Playback so audio continues while app is backgrounded
+    // (used for radio streams).
+    BOOL _playInBackground;
 }
 
 static const NSTimeInterval kReconnectInitialDelaySec = 2.0;
@@ -71,8 +75,22 @@ static const NSTimeInterval kStallCheckIntervalSec = 5.0;
 
 - (void)applicationWillResignActive:(NSNotification *)notification
 {
+    if (_playInBackground) return;
     if (!_paused) {
         [self setPaused:_paused];
+    }
+}
+
+- (void)setPlayInBackground:(BOOL)value
+{
+    _playInBackground = value;
+    if (value) {
+        // Switch audio session to Playback so audio keeps running when the
+        // app is backgrounded. Requires UIBackgroundModes "audio" in Info.plist.
+        NSError *err = nil;
+        AVAudioSession *session = [AVAudioSession sharedInstance];
+        [session setCategory:AVAudioSessionCategoryPlayback error:&err];
+        [session setActive:YES error:&err];
     }
 }
 
