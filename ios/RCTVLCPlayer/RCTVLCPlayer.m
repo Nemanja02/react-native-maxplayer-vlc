@@ -509,6 +509,13 @@ static const NSTimeInterval kStallCheckIntervalSec = 5.0;
 }
 - (void)setAudioTrack:(int)track
 {
+    if (_player == nil) return;
+    // Ignore audioTrack prop until VLC has parsed audio tracks. Otherwise the
+    // initial audioTrack=0 from JS hits libvlc as "Disable" (track id 0 = off
+    // when no real ids exist yet) and audio stays muted until manual toggle.
+    NSArray *indexes = [_player audioTrackIndexes];
+    if (indexes == nil || indexes.count == 0) return;
+    if (![indexes containsObject:@(track)]) return;
     [_player setCurrentAudioTrackIndex:track];
 }
 

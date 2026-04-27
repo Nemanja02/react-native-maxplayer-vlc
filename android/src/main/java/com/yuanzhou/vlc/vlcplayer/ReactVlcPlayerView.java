@@ -678,12 +678,21 @@ class ReactVlcPlayerView extends TextureView implements
     }
 
     public void setAudioTrack(int trackIndex) {
-        if (mMediaPlayer != null) {
-            try {
-                mMediaPlayer.setAudioTrack(trackIndex);
-            } catch (Exception e) {
-                e.printStackTrace();
+        if (mMediaPlayer == null) return;
+        // Ignore audioTrack prop until VLC has parsed audio tracks. Otherwise
+        // initial audioTrack=0 from JS hits libvlc as "Disable" (id 0 = off
+        // when no real ids exist yet) and audio stays muted until manual toggle.
+        try {
+            MediaPlayer.TrackDescription[] tracks = mMediaPlayer.getAudioTracks();
+            if (tracks == null || tracks.length == 0) return;
+            boolean found = false;
+            for (MediaPlayer.TrackDescription t : tracks) {
+                if (t.id == trackIndex) { found = true; break; }
             }
+            if (!found) return;
+            mMediaPlayer.setAudioTrack(trackIndex);
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
