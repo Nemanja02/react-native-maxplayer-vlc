@@ -1,17 +1,29 @@
 package com.yuanzhou.vlc.vlcplayer;
 
 import android.annotation.SuppressLint;
+import android.app.Activity;
+import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.graphics.SurfaceTexture;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.media.AudioManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Surface;
-import android.view.TextureView;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
+
+import androidx.core.content.ContextCompat;
+
+import com.yuanzhou.vlc.pip.PipGuard;
+import com.yuanzhou.vlc.pip.RNVLCPiPModule;
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.LifecycleEventListener;
 import com.facebook.react.bridge.ReadableArray;
@@ -31,9 +43,9 @@ import java.util.ArrayList;
 
 
 @SuppressLint("ViewConstructor")
-class ReactVlcPlayerView extends TextureView implements
+class ReactVlcPlayerView extends SurfaceView implements
         LifecycleEventListener,
-        TextureView.SurfaceTextureListener,
+        SurfaceHolder.Callback,
         AudioManager.OnAudioFocusChangeListener {
 
     private static final String TAG = "ReactVlcPlayerView";
@@ -43,12 +55,11 @@ class ReactVlcPlayerView extends TextureView implements
     private LibVLC libvlc;
     private MediaPlayer mMediaPlayer = null;
     private boolean isSurfaceViewDestory;
+    private boolean isSurfaceCreated = false;
     private String src;
     private boolean netStrTag;
     private ReadableMap srcMap;
     private int mVideoHeight = 0;
-    private TextureView surfaceView;
-    private Surface surfaceVideo;
     private int mVideoWidth = 0;
     private int mVideoVisibleHeight = 0;
     private int mVideoVisibleWidth = 0;
@@ -91,6 +102,38 @@ class ReactVlcPlayerView extends TextureView implements
     private final ThemedReactContext themedReactContext;
     private final AudioManager audioManager;
 
+    // Picture-in-Picture entry forces a window-size resync on libvlc.
+    // TextureView commits its new surface dimensions late during the PiP
+    // transition, so without this libvlc keeps rendering with the old
+    // (full-screen) window size into the now-shrunk surface — visible as
+    // the top-left quadrant of the original frame in the PiP window. We
+    // listen to RNVLCPiPModule's mode-change broadcast and force a
+    // setWindowSize + applyAspectRatio after the OS settles the geometry.
+    private BroadcastReceiver pipModeReceiver;
+    private boolean pipReceiverRegistered = false;
+    private boolean inPipMode = false;
+    private int lastSyncedW = 0;
+    private int lastSyncedH = 0;
+    // OS-reported PiP window pixel dims, populated from MainActivity's
+    // MODE_CHANGED broadcast. These are the AUTHORITATIVE PiP overlay size;
+    // SurfaceView.getWidth/Height during PiP returns the activity's pre-PiP
+    // fullscreen dims (RN UIManager doesn't relayout for PiP), which would
+    // give wrong values to setWindowSize/setAspectRatio.
+    private int pipWidthPx = 0;
+    private int pipHeightPx = 0;
+    // Saved LayoutParams width/height to restore on PiP exit. We override
+    // them on entry to force the SurfaceView's view bounds to match the
+    // OS-reported PiP overlay dims (RN's JS layout otherwise shrinks the
+    // player view to a portrait shape inside a landscape activity, causing
+    // hardware-overlay aniso stretch).
+    private int savedLayoutWidth = 0;
+    private int savedLayoutHeight = 0;
+    // Last landscape surface dimensions seen — used to keep VLC rendering
+    // at landscape geometry even if the OS briefly reports a portrait surface
+    // during the PiP transition (which would otherwise stretch the video).
+    private int lastLandscapeW = 0;
+    private int lastLandscapeH = 0;
+    private ViewTreeObserver.OnGlobalLayoutListener pipLayoutListener;
 
     public ReactVlcPlayerView(ThemedReactContext context) {
         super(context);
@@ -100,9 +143,350 @@ class ReactVlcPlayerView extends TextureView implements
         DisplayMetrics dm = getResources().getDisplayMetrics();
         screenHeight = dm.heightPixels;
         screenWidth = dm.widthPixels;
-        this.setSurfaceTextureListener(this);
+        // Android 14+: keep the underlying Surface alive while attached even
+        // if visibility briefly fluctuates (RN/Fabric can toggle visibility
+        // mid-PiP-transition, which would otherwise tear down the surface
+        // and force libvlc to re-init at a bad moment).
+        if (Build.VERSION.SDK_INT >= 34) {
+            try {
+                setSurfaceLifecycle(SURFACE_LIFECYCLE_FOLLOWS_ATTACHMENT);
+            } catch (Throwable ignored) {
+            }
+        }
+        // SurfaceHolder.Callback — fires on surface creation/resize/destroy.
+        getHolder().addCallback(this);
+        // Place SurfaceView's hardware-overlay layer above the activity's
+        // window background but BELOW any sibling views rendered after this
+        // in the React tree (PlayerControls, loader, PiP button). Without
+        // this, those overlays would render *under* the SurfaceView and be
+        // invisible. ZOrderOnTop would put SurfaceView above everything,
+        // which we don't want.
+        setZOrderMediaOverlay(true);
 
         this.addOnLayoutChangeListener(onLayoutChangeListener);
+        registerPipReceiver();
+    }
+
+    private void registerPipReceiver() {
+        if (pipReceiverRegistered) return;
+        pipModeReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                String action = intent.getAction();
+                if (RNVLCPiPModule.ACTION_MODE_CHANGED.equals(action)) {
+                    inPipMode = intent.getBooleanExtra(
+                            RNVLCPiPModule.EXTRA_IS_IN_PIP, false);
+                    pipWidthPx = intent.getIntExtra("widthPx", 0);
+                    pipHeightPx = intent.getIntExtra("heightPx", 0);
+                    Log.d("RNVLCPiP", "MODE_CHANGED inPip=" + inPipMode
+                            + " pipDims=" + pipWidthPx + "x" + pipHeightPx);
+                    if (inPipMode && pipWidthPx > 0 && pipHeightPx > 0) {
+                        // Two-pronged fix to match the rendered video aspect
+                        // to the PiP overlay's actual aspect:
+                        //
+                        // 1) setFixedSize forces the surface BUFFER to the
+                        //    PiP overlay dims. VLC's "fill" aspect computes
+                        //    from these → setAspectRatio matches the surface
+                        //    so vout doesn't reconfigure → no black screen.
+                        //
+                        // 2) setLayoutParams forces the SurfaceView's view
+                        //    BOUNDS to the same PiP dims. Without this, RN's
+                        //    JS layout shrinks the player view to ~710x1280
+                        //    (portrait shape inside a landscape activity) so
+                        //    the SurfaceView hardware overlay aniso-stretches
+                        //    its 711x399 16:9 buffer onto a 710x1280 portrait
+                        //    rect → vertical stretch in the PiP overlay.
+                        //    Forcing the LayoutParams to match the buffer
+                        //    makes overlay-to-view scaling 1:1 (no aniso).
+                        try {
+                            getHolder().setFixedSize(pipWidthPx, pipHeightPx);
+                        } catch (Exception e) {
+                            Log.e("RNVLCPiP", "setFixedSize failed", e);
+                        }
+                        // Apply view-level scale transform to compensate for
+                        // RN-driven view bounds mismatch with buffer aspect.
+                        // Re-applied via onLayoutChangeListener and the
+                        // handlePipPlayPause path on subsequent layout
+                        // changes.
+                        applySurfaceScalingMode(2);
+                        try {
+                            ViewGroup.LayoutParams lp = getLayoutParams();
+                            if (lp != null) {
+                                savedLayoutWidth = lp.width;
+                                savedLayoutHeight = lp.height;
+                                // MATCH_PARENT: fill whatever the parent
+                                // is. JS layout typically constrains the
+                                // player to a portrait-shaped wrapper
+                                // (~710x1280) inside the landscape activity
+                                // during the PiP optimistic flip; forcing
+                                // MATCH_PARENT bypasses that constraint and
+                                // lets the SurfaceView span the full parent
+                                // (or activity) so its hardware overlay
+                                // renders at the same shape as the activity
+                                // → after iso scale to PiP, it fills the
+                                // overlay 1:1 with the buffer aspect.
+                                lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+                                lp.height = ViewGroup.LayoutParams.MATCH_PARENT;
+                                setLayoutParams(lp);
+                            }
+                        } catch (Exception e) {
+                            Log.e("RNVLCPiP", "setLayoutParams failed", e);
+                        }
+                    } else if (!inPipMode) {
+                        // Release the fixed size so the surface returns to
+                        // tracking the layout-driven view bounds (fullscreen
+                        // for the inline player).
+                        try {
+                            getHolder().setSizeFromLayout();
+                        } catch (Exception e) {
+                            Log.e("RNVLCPiP", "setSizeFromLayout failed", e);
+                        }
+                        // Restore identity transform.
+                        applySurfaceScalingMode(1);
+                        try {
+                            ViewGroup.LayoutParams lp = getLayoutParams();
+                            if (lp != null && savedLayoutWidth != 0) {
+                                lp.width = savedLayoutWidth;
+                                lp.height = savedLayoutHeight;
+                                setLayoutParams(lp);
+                            }
+                        } catch (Exception e) {
+                            Log.e("RNVLCPiP", "restore LayoutParams failed", e);
+                        }
+                        pipWidthPx = 0;
+                        pipHeightPx = 0;
+                    }
+                } else if (RNVLCPiPModule.ACTION_CONTROL.equals(action)) {
+                    // PiP overlay Play/Pause tap. We toggle the VLC player
+                    // directly here instead of routing through JS — RN's
+                    // UIManager defers view prop updates while the activity
+                    // is paused (which it is during PiP), so the `paused`
+                    // prop change from JS doesn't actually reach
+                    // setPausedModifier until the activity resumes. Direct
+                    // native toggle bypasses that. JS still receives an
+                    // event from RNVLCPiPModule and updates its mirrored
+                    // paused state for icon-sync purposes.
+                    String control = intent.getStringExtra(
+                            RNVLCPiPModule.EXTRA_CONTROL);
+                    if ("playPause".equals(control)) {
+                        handlePipPlayPause();
+                    }
+                }
+            }
+        };
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(RNVLCPiPModule.ACTION_MODE_CHANGED);
+        filter.addAction(RNVLCPiPModule.ACTION_CONTROL);
+        ContextCompat.registerReceiver(
+                getContext().getApplicationContext(),
+                pipModeReceiver,
+                filter,
+                ContextCompat.RECEIVER_NOT_EXPORTED);
+        pipReceiverRegistered = true;
+    }
+
+    /**
+     * Apply a view-level scale transform to make the SurfaceView's visible
+     * rect match the buffer's aspect ratio (PiP overlay aspect). Modern
+     * Android (API 28+) propagates View transforms onto SurfaceView's
+     * hardware overlay positioning, so this effectively shrinks the
+     * overlay rect to the correct aspect rather than aniso-stretching the
+     * buffer to fill the view bounds.
+     *
+     * @param mode  2 to apply (PiP enter), 1 to reset (PiP exit)
+     */
+    private void applySurfaceScalingMode(int mode) {
+        if (mode == 1) {
+            // Reset to identity
+            setScaleX(1f);
+            setScaleY(1f);
+            setPivotX(getWidth() / 2f);
+            setPivotY(getHeight() / 2f);
+            return;
+        }
+        // mode == 2: apply aspect-preserving scale
+        if (pipWidthPx <= 0 || pipHeightPx <= 0) return;
+        int viewW = getWidth();
+        int viewH = getHeight();
+        if (viewW <= 0 || viewH <= 0) return;
+        float bufferAspect = (float) pipWidthPx / pipHeightPx;
+        float viewAspect = (float) viewW / viewH;
+        // Pivot at top-left so the visible region anchors there (better
+        // than centered for PiP overlay because the activity's iso scale
+        // to PiP fills from top-left).
+        setPivotX(0);
+        setPivotY(0);
+        if (Math.abs(viewAspect - bufferAspect) < 0.01f) {
+            // Aspects match — no transform needed
+            setScaleX(1f);
+            setScaleY(1f);
+        } else if (viewAspect < bufferAspect) {
+            // View is taller than buffer aspect (e.g., portrait view with
+            // 16:9 buffer) — shrink height so visible area is buffer-aspect
+            setScaleX(1f);
+            setScaleY(viewAspect / bufferAspect);
+        } else {
+            // View is wider than buffer aspect — shrink width
+            setScaleX(bufferAspect / viewAspect);
+            setScaleY(1f);
+        }
+    }
+
+    private void unregisterPipReceiver() {
+        if (!pipReceiverRegistered || pipModeReceiver == null) return;
+        try {
+            getContext().getApplicationContext().unregisterReceiver(pipModeReceiver);
+        } catch (Exception ignored) {
+        }
+        pipReceiverRegistered = false;
+        pipModeReceiver = null;
+    }
+
+    private void enablePipLayoutListener() {
+        if (pipLayoutListener != null) return;
+        pipLayoutListener = new ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override
+            public void onGlobalLayout() {
+                if (!inPipMode) return;
+                int[] dims = resolvePipDimensions();
+                int w = dims[0];
+                int h = dims[1];
+                if (w <= 0 || h <= 0) return;
+                // Debounce: only resync when the dimensions actually change.
+                // Without this, this listener fires on every layout pass and
+                // we'd thrash setWindowSize/applyAspectRatio at draw rate.
+                if (w == lastSyncedW && h == lastSyncedH) return;
+                lastSyncedW = w;
+                lastSyncedH = h;
+                forceVlcResyncRunnable.run();
+            }
+        };
+        getViewTreeObserver().addOnGlobalLayoutListener(pipLayoutListener);
+    }
+
+    private void disablePipLayoutListener() {
+        if (pipLayoutListener == null) return;
+        try {
+            getViewTreeObserver().removeOnGlobalLayoutListener(pipLayoutListener);
+        } catch (Exception ignored) {
+        }
+        pipLayoutListener = null;
+    }
+
+    /**
+     * Micro translationX nudge that forces a SurfaceControl/BLAST transaction
+     * flush without triggering measure/layout. This mimics what user-dragging
+     * the PiP window does naturally — kicks the system into emitting
+     * surfaceChanged with the actual PiP window dims (instead of the stale
+     * fullscreen 2856x1280 it shipped at PiP entry).
+     */
+    private void scheduleSurfaceNudge(final long delayMs) {
+        postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                final float originalTx = getTranslationX();
+                Log.d("RNVLCPiP", "Surface nudge fire @" + delayMs
+                        + "ms inPip=" + inPipMode
+                        + " size=" + getWidth() + "x" + getHeight());
+                setTranslationX(originalTx + 0.5f);
+                postOnAnimation(new Runnable() {
+                    @Override
+                    public void run() {
+                        setTranslationX(originalTx);
+                        postInvalidateOnAnimation();
+                    }
+                });
+            }
+        }, delayMs);
+    }
+
+    private void handlePipPlayPause() {
+        if (mMediaPlayer == null) return;
+        try {
+            if (mMediaPlayer.isPlaying()) {
+                isPaused = true;
+                mMediaPlayer.pause();
+            } else {
+                isPaused = false;
+                mMediaPlayer.play();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        // VLC pause causes a brief layout/redraw pass that can reset our
+        // setScaleX/Y. Re-apply immediately AND after a short delay to
+        // catch any deferred layout pass triggered by the play/pause
+        // state change (RN render → onLayoutChange → potential clobber).
+        applySurfaceScalingMode(2);
+        postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (inPipMode) {
+                    applySurfaceScalingMode(2);
+                }
+            }
+        }, 100);
+    }
+
+    private int[] resolvePipDimensions() {
+        int w = getWidth();
+        int h = getHeight();
+        if (w <= 0 || h <= 0 || isLikelyFullScreen(w, h)) {
+            Activity activity = themedReactContext.getCurrentActivity();
+            if (activity != null) {
+                int dw = activity.getWindow().getDecorView().getWidth();
+                int dh = activity.getWindow().getDecorView().getHeight();
+                if (dw > 0 && dh > 0) {
+                    w = dw;
+                    h = dh;
+                }
+            }
+        }
+        return new int[] { w, h };
+    }
+
+    private final Runnable forceVlcResyncRunnable = new Runnable() {
+        @Override
+        public void run() {
+            // VLC-only resync: push current dims into libvlc, no Android
+            // view manipulations (requestLayout/invalidate trigger an
+            // orientation flip that flips surface to portrait, which then
+            // makes 'fill' aspect stretch the video).
+            //
+            // During PiP: use OS-reported PiP window dims (from MainActivity
+            // broadcast). SurfaceView's getWidth/Height returns activity
+            // fullscreen dims (~2856x1280) since RN's view tree doesn't
+            // shrink for PiP, but the actual rendered overlay is small
+            // (e.g. 480x270 for 16:9 PiP). Feeding the wrong dims to libvlc
+            // makes "fill" aspect stretch the video.
+            if (mMediaPlayer == null) return;
+            int w, h;
+            if (inPipMode && pipWidthPx > 0 && pipHeightPx > 0) {
+                w = pipWidthPx;
+                h = pipHeightPx;
+            } else {
+                w = getWidth();
+                h = getHeight();
+            }
+            if (w <= 0 || h <= 0) return;
+            try {
+                mVideoWidth = w;
+                mVideoHeight = h;
+                IVLCVout vlcOut = mMediaPlayer.getVLCVout();
+                vlcOut.setWindowSize(w, h);
+                applyAspectRatio();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    };
+
+    // Heuristic: if the reported size matches the original screen dimensions
+    // we recorded at construction, we're probably reading stale values (the
+    // OS hasn't committed the new PiP layout yet). Fall back to decor view.
+    private boolean isLikelyFullScreen(int w, int h) {
+        return (w >= screenWidth - 16 && h >= screenHeight - 64)
+                || (w >= screenHeight - 64 && h >= screenWidth - 16);
     }
 
 
@@ -115,7 +499,6 @@ class ReactVlcPlayerView extends TextureView implements
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        //createPlayer();
     }
 
     @Override
@@ -131,11 +514,9 @@ class ReactVlcPlayerView extends TextureView implements
         if (mMediaPlayer != null && isSurfaceViewDestory && isHostPaused) {
             IVLCVout vlcOut = mMediaPlayer.getVLCVout();
             if (!vlcOut.areViewsAttached()) {
-                // vlcOut.setVideoSurface(this.getHolder().getSurface(), this.getHolder());
                 vlcOut.attachViews(onNewVideoLayoutListener);
                 isSurfaceViewDestory = false;
                 isPaused = false;
-                // this.getHolder().setKeepScreenOn(true);
                 mMediaPlayer.play();
             }
         }
@@ -147,6 +528,24 @@ class ReactVlcPlayerView extends TextureView implements
         if (playInBackground) {
             // Keep audio running while app is backgrounded (radio streams).
             return;
+        }
+        // During the inline PiP transition (single-Activity flow), MainActivity
+        // briefly emits onPause as it shrinks into the PiP window. Skip the
+        // mediaPlayer.pause() so playback continues seamlessly into the
+        // overlay — the isInPictureInPictureMode() check below would also
+        // catch this, but the PipGuard flag is set earlier (the moment
+        // enterPictureInPictureMode is called) so it's the more reliable gate.
+        if (PipGuard.pipTransitionPending.get()) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            try {
+                Activity activity = themedReactContext.getCurrentActivity();
+                if (activity != null && activity.isInPictureInPictureMode()) {
+                    return;
+                }
+            } catch (Exception ignored) {
+            }
         }
         if (!isPaused && mMediaPlayer != null) {
             isPaused = true;
@@ -259,6 +658,14 @@ class ReactVlcPlayerView extends TextureView implements
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
+                }
+                // Re-apply PiP scale transform if in PiP mode — RN's
+                // layout pass can clobber our setScaleX/Y, especially
+                // around play/pause state changes that trigger view
+                // re-renders. Reapplying here keeps the overlay rect
+                // pinned to the correct aspect.
+                if (inPipMode) {
+                    applySurfaceScalingMode(2);
                 }
             }
         }
@@ -427,6 +834,9 @@ class ReactVlcPlayerView extends TextureView implements
     private void stopPlayback() {
         onStopPlayback();
         releasePlayer();
+        unregisterPipReceiver();
+        disablePipLayoutListener();
+        removeCallbacks(forceVlcResyncRunnable);
     }
 
     private void onStopPlayback() {
@@ -436,13 +846,13 @@ class ReactVlcPlayerView extends TextureView implements
 
     private void createPlayer(boolean autoplayResume, boolean isResume) {
         releasePlayer();
-        if (this.getSurfaceTexture() == null) {
+        if (!isSurfaceCreated || getHolder().getSurface() == null
+                || !getHolder().getSurface().isValid()) {
             return;
         }
         try {
             final ArrayList<String> cOptions = new ArrayList<>();
             String uriString = srcMap.hasKey("uri") ? srcMap.getString("uri") : null;
-            //String extension = srcMap.hasKey("type") ? srcMap.getString("type") : null;
             boolean isNetwork = srcMap.hasKey("isNetwork") ? srcMap.getBoolean("isNetwork") : false;
             boolean autoplay = srcMap.hasKey("autoplay") ? srcMap.getBoolean("autoplay") : true;
             int initType = srcMap.hasKey("initType") ? srcMap.getInt("initType") : 1;
@@ -452,16 +862,9 @@ class ReactVlcPlayerView extends TextureView implements
             boolean hwDecoderEnabled = srcMap.hasKey("hwDecoderEnabled") ? srcMap.getBoolean("hwDecoderEnabled") : false;
             boolean hwDecoderForced = srcMap.hasKey("hwDecoderForced") ? srcMap.getBoolean("hwDecoderForced") : false;
 
-            // Retry config — read from source dict each time (setSrc may be called on remount).
-            // reconnectAttempt is NOT reset here because createPlayer is also invoked *from*
-            // the reconnect runnable itself; resetting would break exponential backoff.
-            // It's reset on successful Playing event (see mPlayerListener).
             this.mediaType = srcMap.hasKey("mediaType") ? srcMap.getString("mediaType") : null;
-            // isLive controls unlimited retries. Treat live + timeshift alike for backoff cap.
             this.isLiveStream = mediaType != null
                 && ("live".equalsIgnoreCase(mediaType) || "timeshift".equalsIgnoreCase(mediaType));
-            // Default auto-reconnect ONLY for "live" — timeshift consumers typically have
-            // their own fallback URL logic and should opt-in explicitly.
             boolean defaultAutoReconnect = "live".equalsIgnoreCase(mediaType);
             this.autoReconnect = srcMap.hasKey("autoReconnect")
                 ? srcMap.getBoolean("autoReconnect")
@@ -473,17 +876,14 @@ class ReactVlcPlayerView extends TextureView implements
             if (initOptions != null) {
                 ArrayList options = initOptions.toArrayList();
                 for (int i = 0; i < options.size(); i++) {
-                    String option = (String) options.get(i);
-                    cOptions.add(option);
+                    cOptions.add((String) options.get(i));
                 }
             }
-            // Create LibVLC
             if (initType == 1) {
                 libvlc = new LibVLC(getContext());
             } else {
                 libvlc = new LibVLC(getContext(), cOptions);
             }
-            // Create media player
             mMediaPlayer = new MediaPlayer(libvlc);
             mMediaPlayer.setEventListener(mPlayerListener);
 
@@ -491,85 +891,61 @@ class ReactVlcPlayerView extends TextureView implements
                 libvlc.setUserAgent(userAgent, userAgent);
             }
 
-            //this.getHolder().setKeepScreenOn(true);
             IVLCVout vlcOut = mMediaPlayer.getVLCVout();
             if (mVideoWidth > 0 && mVideoHeight > 0) {
                 vlcOut.setWindowSize(mVideoWidth, mVideoHeight);
                 applyAspectRatio();
             }
 
-            DisplayMetrics dm = getResources().getDisplayMetrics();
-            Media m = null;
+            Media m;
             if (isNetwork) {
-                Uri uri = Uri.parse(uriString);
-                m = new Media(libvlc, uri);
+                m = new Media(libvlc, Uri.parse(uriString));
             } else {
                 m = new Media(libvlc, uriString);
             }
             m.setEventListener(mMediaListener);
             m.setHWDecoderEnabled(hwDecoderEnabled, hwDecoderForced);
-            //添加media  option
             if (mediaOptions != null) {
                 ArrayList options = mediaOptions.toArrayList();
                 for (int i = 0; i < options.size() - 1; i++) {
-                    String option = (String) options.get(i);
-                    m.addOption(option);
+                    m.addOption((String) options.get(i));
                 }
             }
             mMediaPlayer.setMedia(m);
-            // https://github.com/razorRun/react-native-vlc-media-player/commit/dbbcff9ea08bf08dcfde506dc16e896bbf08b407
             m.release();
             mMediaPlayer.setScale(0);
 
             if (!vlcOut.areViewsAttached()) {
                 vlcOut.addCallback(callback);
-                // vlcOut.setVideoSurface(this.getSurfaceTexture());
-                //vlcOut.setVideoSurface(this.getHolder().getSurface(), this.getHolder());
-                //vlcOut.attachViews(onNewVideoLayoutListener);
-                vlcOut.setVideoSurface(this.getSurfaceTexture());
+                vlcOut.setVideoView(this);
                 vlcOut.attachViews(onNewVideoLayoutListener);
-                // vlcOut.attachSurfaceSlave(surfaceVideo,null,onNewVideoLayoutListener);
-                //vlcOut.setVideoView(this);
-                //vlcOut.attachViews(onNewVideoLayoutListener);
             }
             if (isResume) {
-                if (autoplayResume) {
-                    mMediaPlayer.play();
-                }
-            } else {
-                if (autoplay) {
-                    isPaused = false;
-                    mMediaPlayer.play();
-                }
+                if (autoplayResume) mMediaPlayer.play();
+            } else if (autoplay) {
+                isPaused = false;
+                mMediaPlayer.play();
             }
             eventEmitter.loadStart();
-
             setProgressUpdateRunnable();
         } catch (Exception e) {
             e.printStackTrace();
-            //Toast.makeText(getContext(), "Error creating player!", Toast.LENGTH_LONG).show();
         }
     }
 
     private void releasePlayer() {
-        // Always cancel retry/stall timers on release — even if libvlc is null,
-        // there may be a pending reconnect scheduled before first createPlayer
         stopStallDetection();
         cancelPendingReconnect();
-        if (libvlc == null)
-            return;
-        // Detach listener before stop to avoid stale events racing reconnect
+        if (libvlc == null) return;
         try { mMediaPlayer.setEventListener(null); } catch (Exception ignored) {}
         mMediaPlayer.stop();
         final IVLCVout vout = mMediaPlayer.getVLCVout();
         vout.removeCallback(callback);
         vout.detachViews();
-        //surfaceView.removeOnLayoutChangeListener(onLayoutChangeListener);
-        // https://github.com/razorRun/react-native-vlc-media-player/commit/1382cd512a0b2a88bed363eca44de3f90acdc5c0
         mMediaPlayer.release();
         libvlc.release();
         libvlc = null;
-        if(mProgressUpdateRunnable!=null){
+        if (mProgressUpdateRunnable != null) {
             mProgressUpdateHandler.removeCallbacks(mProgressUpdateRunnable);
         }
     }
@@ -836,21 +1212,19 @@ class ReactVlcPlayerView extends TextureView implements
 
 
     public void applyAspectRatio() {
-        if (mMediaPlayer != null) {
-            try {
-                if (aspectRatio == null || aspectRatio.equals("original")) {
-                    aspectRatio = null;
-                } else if (aspectRatio.equals("fill")) {
-                    if (mVideoWidth > 0 && mVideoHeight > 0) {
-                        // vlcOut.setWindowSize(mVideoWidth, mVideoHeight);
-                        mMediaPlayer.setAspectRatio(mVideoWidth + ":" + mVideoHeight);
-                    }
-                    return;
+        if (mMediaPlayer == null) return;
+        try {
+            if (aspectRatio == null || aspectRatio.equals("original")) {
+                aspectRatio = null;
+            } else if (aspectRatio.equals("fill")) {
+                if (mVideoWidth > 0 && mVideoHeight > 0) {
+                    mMediaPlayer.setAspectRatio(mVideoWidth + ":" + mVideoHeight);
                 }
-                mMediaPlayer.setAspectRatio(aspectRatio);
-            } catch (Exception e) {
-                e.printStackTrace();
+                return;
             }
+            mMediaPlayer.setAspectRatio(aspectRatio);
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
@@ -860,33 +1234,44 @@ class ReactVlcPlayerView extends TextureView implements
     }
 
     public void cleanUpResources() {
-        if (surfaceView != null) {
-            surfaceView.removeOnLayoutChangeListener(onLayoutChangeListener);
-        }
+        removeOnLayoutChangeListener(onLayoutChangeListener);
         stopPlayback();
     }
 
     @Override
-    public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
-        mVideoWidth = width;
-        mVideoHeight = height;
-        surfaceVideo = new Surface(surface);
+    public void surfaceCreated(SurfaceHolder holder) {
+        isSurfaceCreated = true;
+        if (getWidth() > 0 && getHeight() > 0) {
+            mVideoWidth = getWidth();
+            mVideoHeight = getHeight();
+        }
+        // Mirrors onSurfaceTextureAvailable behavior: kick off the player
+        // once we have a valid surface to render into.
         createPlayer(true, false);
     }
 
     @Override
-    public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
-
+    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+        Log.d("RNVLCPiP", "surfaceChanged raw=" + width + "x" + height
+                + " inPip=" + inPipMode);
+        mVideoWidth = width;
+        mVideoHeight = height;
+        if (mMediaPlayer == null) return;
+        try {
+            IVLCVout vlcOut = mMediaPlayer.getVLCVout();
+            vlcOut.setWindowSize(width, height);
+            applyAspectRatio();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
-    public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
-        return true;
-    }
-
-    @Override
-    public void onSurfaceTextureUpdated(SurfaceTexture surface) {
-        // Log.i("onSurfaceTextureUpdated", "onSurfaceTextureUpdated");
+    public void surfaceDestroyed(SurfaceHolder holder) {
+        isSurfaceCreated = false;
+        // libvlc's IVLCVout will detach automatically via its callback when
+        // the surface goes away; we don't tear down the player here so it
+        // can resume cleanly on next surfaceCreated (e.g. after PiP exit).
     }
 
     private final Media.EventListener mMediaListener = new Media.EventListener() {

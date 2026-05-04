@@ -7,16 +7,20 @@ import com.facebook.react.bridge.NativeModule;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.uimanager.ViewManager;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import com.yuanzhou.vlc.pip.RNVLCPiPModule;
 import com.yuanzhou.vlc.vlcplayer.ReactVlcPlayerViewManager;
 
 public class ReactVlcPlayerPackage implements ReactPackage {
 
     @Override
     public List<NativeModule> createNativeModules(ReactApplicationContext reactContext) {
-        return Collections.emptyList();
+        List<NativeModule> modules = new ArrayList<>();
+        modules.add(new RNVLCPiPModule(reactContext));
+        return modules;
     }
 
     // Deprecated RN 0.47

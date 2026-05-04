@@ -21,4 +21,10 @@
 - (void)setMuted:(BOOL)value;
 - (void)setPlayInBackground:(BOOL)value;
 
+// Picture-in-Picture API — called by RNVLCPiPModule
+- (BOOL)enterPictureInPicture;
+- (void)exitPictureInPicture;
+- (void)setPiPPlaying:(BOOL)playing;
+- (void)setPiPAutoEnter:(BOOL)enabled;
+
 @end
