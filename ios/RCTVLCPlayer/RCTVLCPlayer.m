@@ -155,9 +155,18 @@ static const NSTimeInterval kStallCheckIntervalSec = 5.0;
 
 - (void)applicationWillResignActive:(NSNotification *)notification
 {
+    // Skip auto-pause for radio (playInBackground=YES) — audio session is
+    // configured for AVAudioSessionCategoryPlayback and we want to keep
+    // streaming while the app is backgrounded.
     if (_playInBackground) return;
+    // Pause the video on background. Prior implementation called
+    // `setPaused:_paused` which (when _paused=NO, the only branch we
+    // reach) inverted to `setPaused:NO` → calls `play` → no-op since
+    // already playing. Result was VLC continuing to decode in background
+    // (CPU + battery waste, audio still cut by OS audio session).
+    // Explicitly pause so the decoder also stops.
     if (!_paused) {
-        [self setPaused:_paused];
+        [self setPaused:YES];
     }
 }
 

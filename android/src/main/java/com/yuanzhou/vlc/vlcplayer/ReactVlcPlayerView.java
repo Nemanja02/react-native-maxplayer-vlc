@@ -408,6 +408,7 @@ class ReactVlcPlayerView extends SurfaceView implements
                 mMediaPlayer.pause();
             } else {
                 isPaused = false;
+                requestAudioFocusForPlayback();
                 mMediaPlayer.play();
             }
         } catch (Exception e) {
@@ -517,6 +518,7 @@ class ReactVlcPlayerView extends SurfaceView implements
                 vlcOut.attachViews(onNewVideoLayoutListener);
                 isSurfaceViewDestory = false;
                 isPaused = false;
+                requestAudioFocusForPlayback();
                 mMediaPlayer.play();
             }
         }
@@ -570,9 +572,62 @@ class ReactVlcPlayerView extends SurfaceView implements
     }
 
 
+    // True if VLC was playing before an audio focus loss interruption.
+    // Used to auto-resume on focus regain.
+    private boolean wasPlayingBeforeFocusLoss = false;
+
     // AudioManager.OnAudioFocusChangeListener implementation
     @Override
     public void onAudioFocusChange(int focusChange) {
+        if (mMediaPlayer == null || libvlc == null) return;
+        switch (focusChange) {
+            case AudioManager.AUDIOFOCUS_LOSS:
+                // Permanent loss (e.g., other app started long playback).
+                // Pause and abandon focus — don't auto-resume.
+                if (mMediaPlayer.isPlaying()) {
+                    wasPlayingBeforeFocusLoss = false;
+                    isPaused = true;
+                    mMediaPlayer.pause();
+                }
+                audioManager.abandonAudioFocus(this);
+                break;
+            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
+            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                // Transient loss (incoming call, alarm, navigation prompt).
+                // Pause but remember to auto-resume on regain. We treat
+                // CAN_DUCK same as LOSS_TRANSIENT — for video, ducking is
+                // less appropriate than pausing.
+                if (mMediaPlayer.isPlaying()) {
+                    wasPlayingBeforeFocusLoss = true;
+                    isPaused = true;
+                    mMediaPlayer.pause();
+                }
+                break;
+            case AudioManager.AUDIOFOCUS_GAIN:
+                if (wasPlayingBeforeFocusLoss && !mMediaPlayer.isPlaying()) {
+                    isPaused = false;
+                    mMediaPlayer.play();
+                }
+                wasPlayingBeforeFocusLoss = false;
+                break;
+        }
+    }
+
+    /**
+     * Request audio focus before starting playback. Without an active focus
+     * request, onAudioFocusChange never fires and we miss interruptions
+     * (incoming calls, alarms, etc.) — VLC keeps playing audio in the
+     * background unaware that another app or the OS is trying to take
+     * over the audio stream.
+     */
+    private void requestAudioFocusForPlayback() {
+        try {
+            audioManager.requestAudioFocus(
+                    this,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN);
+        } catch (Throwable ignored) {
+        }
     }
 
     // private void setProgressUpdateRunnable() {
@@ -921,9 +976,13 @@ class ReactVlcPlayerView extends SurfaceView implements
                 vlcOut.attachViews(onNewVideoLayoutListener);
             }
             if (isResume) {
-                if (autoplayResume) mMediaPlayer.play();
+                if (autoplayResume) {
+                    requestAudioFocusForPlayback();
+                    mMediaPlayer.play();
+                }
             } else if (autoplay) {
                 isPaused = false;
+                requestAudioFocusForPlayback();
                 mMediaPlayer.play();
             }
             eventEmitter.loadStart();
@@ -1101,6 +1160,16 @@ class ReactVlcPlayerView extends SurfaceView implements
         // New source = fresh retry budget (exponential backoff doesn't carry over
         // from a previous URL's failures)
         this.reconnectAttempt = 0;
+        if (inPipMode) {
+            // Source change while PiP is active is uncommon but possible
+            // (notification deep link, scheduled channel switch, etc).
+            // VLC release+recreate causes a brief surface flicker visible
+            // in the PiP overlay. Logging so we can correlate user reports
+            // of "PiP went black" with deep-link / external source change
+            // events.
+            Log.w("RNVLCPiP", "setSrc called during active PiP — expect "
+                    + "brief flicker in overlay during VLC re-init");
+        }
         createPlayer(true, false);
 
     }
@@ -1175,6 +1244,7 @@ class ReactVlcPlayerView extends SurfaceView implements
                     mMediaPlayer.pause();
                 } else {
                     isPaused = false;
+                    requestAudioFocusForPlayback();
                     mMediaPlayer.play();
                     // Log.i("do play:", true + "");
                 }

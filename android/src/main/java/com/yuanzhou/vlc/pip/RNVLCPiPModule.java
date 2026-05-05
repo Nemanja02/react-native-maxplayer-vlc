@@ -73,10 +73,23 @@ public class RNVLCPiPModule extends ReactContextBaseJavaModule implements Lifecy
             if (ACTION_MODE_CHANGED.equals(action)) {
                 boolean isInPip = intent.getBooleanExtra(EXTRA_IS_IN_PIP, false);
                 if (!isInPip) {
-                    // PiP closed (user expanded or X'd). Release both guards
-                    // so the orientation library can take control again.
-                    PipGuard.freezeOrientationRequests.set(false);
+                    // PiP closed — could be either:
+                    // (a) user expanded back to fullscreen via tap on the
+                    //     PiP overlay (activity returns to foreground)
+                    // (b) user X'd the PiP window (activity finishes)
+                    //
+                    // For (a), the orientation library wakes up after the
+                    // activity foregrounds and may try to reset orientation
+                    // (e.g., back to portrait) before the JS-side fullscreen
+                    // logic re-asserts landscape. We hold the orientation
+                    // guard for an additional 1500ms — long enough to cover
+                    // the post-expand transition while short enough to not
+                    // interfere with normal user-driven orientation changes
+                    // (e.g., user navigating away from the player).
                     PipGuard.pipTransitionPending.set(false);
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        PipGuard.freezeOrientationRequests.set(false);
+                    }, 1500);
                 }
                 WritableMap params = Arguments.createMap();
                 params.putBoolean("isInPictureInPictureMode", isInPip);
@@ -170,6 +183,21 @@ public class RNVLCPiPModule extends ReactContextBaseJavaModule implements Lifecy
 
     @TargetApi(Build.VERSION_CODES.O)
     private void tryEnterPip(Activity activity, ReadableMap options, Promise promise) {
+        // Activity may have been destroyed in the postDelayed window between
+        // enter() and tryEnterPip (user navigates away, screen rotates and
+        // the rotation actually recreates instead of going through onConfig
+        // ChangeChanged, system kills app, etc). Bail with a clean reject
+        // instead of crashing on enterPictureInPictureMode against a dead
+        // activity.
+        if (activity == null || activity.isFinishing()
+                || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1
+                        && activity.isDestroyed())) {
+            PipGuard.freezeOrientationRequests.set(false);
+            PipGuard.pipTransitionPending.set(false);
+            promise.reject("E_NO_ACTIVITY",
+                    "Activity destroyed before PiP entry could be attempted");
+            return;
+        }
         try {
             // Override the JS-passed aspect ratio to match the activity's
             // CURRENT orientation. If the activity is portrait but PiP is
