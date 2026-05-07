@@ -199,27 +199,22 @@ public class RNVLCPiPModule extends ReactContextBaseJavaModule implements Lifecy
             return;
         }
         try {
-            // Override the JS-passed aspect ratio to match the activity's
-            // CURRENT orientation. If the activity is portrait but PiP is
-            // 16:9, Android iso-scales the portrait window into the
-            // landscape overlay with letterbox, plus the SurfaceView's
-            // hardware overlay aniso-stretches the 16:9 buffer onto the
-            // portrait view bounds — net effect is vertical stretch.
-            // Matching PiP aspect to activity makes scaling 1:1 (no
-            // letterbox, no aniso stretch). 16:9 video gets letterboxed
-            // inside a portrait PiP overlay — visible black bars top/
-            // bottom but the video itself is correctly proportioned.
+            // Use a fixed 16:9 PiP aspect — the standard video frame ratio.
+            // Earlier we computed aspect dynamically from cfg.screenWidthDp/
+            // Height to match activity orientation (avoiding letterbox in
+            // the activity→PiP iso scale), but on ultrawide phones (e.g.
+            // 952x427 dp = 2.23:1) Android 10 honored that aspect literally
+            // and produced an edge-to-edge PiP overlay across the full
+            // phone width — too big to be useful as PiP. The View.setScaleY
+            // transform fix in ReactVlcPlayerView already compensates for
+            // aspect mismatch between the buffer and the view bounds, so a
+            // fixed 16:9 PiP overlay no longer reintroduces the vertical
+            // stretch we originally had.
             PictureInPictureParams.Builder b = newBuilder(options, activity);
-            Configuration cfg = activity.getResources().getConfiguration();
-            int wdp = cfg.screenWidthDp;
-            int hdp = cfg.screenHeightDp;
-            if (wdp > 0 && hdp > 0) {
-                Rational ar = clampAspect(new Rational(wdp, hdp));
-                b.setAspectRatio(ar);
-                Log.d("RNVLCPiP", "tryEnterPip aspect=" + ar.getNumerator()
-                        + ":" + ar.getDenominator()
-                        + " (cfg " + wdp + "x" + hdp + " dp)");
-            }
+            Rational ar = clampAspect(new Rational(16, 9));
+            b.setAspectRatio(ar);
+            Log.d("RNVLCPiP", "tryEnterPip aspect=" + ar.getNumerator()
+                    + ":" + ar.getDenominator() + " (fixed 16:9)");
             PictureInPictureParams params = b.build();
             boolean entered = activity.enterPictureInPictureMode(params);
             if (!entered) {
